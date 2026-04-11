@@ -90,6 +90,8 @@ $ nara
 
 Opens a persistent conversational session. The agent talks back, asks questions when it needs input, and executes autonomously when it has enough context.
 
+**Example session (illustrative — actual output will vary based on LLM reasoning):**
+
 ```
 $ nara
 
@@ -114,13 +116,13 @@ Want me to exploit these?
 nara > go for it, full chain
 [PLANNER] Designing kill chain...
   Step 1: Deploy vulnerable app in container
-  Step 2: Exploit command injection via /ping endpoint
+  Step 2: Exploit command injection via /api/pokemon endpoint
   Step 3: Confirm shell access
   Step 4: Deploy ransomware simulation
 
 [EXPLOITER] Starting vulnerable app in container...
 [EXPLOITER] App running on container:8080
-[EXPLOITER] Targeting command injection at /ping endpoint...
+[EXPLOITER] Targeting command injection at /api/pokemon endpoint...
 [EXPLOITER] Sending payload: ; whoami
 [EXPLOITER] Response: www-data — shell access confirmed
 [RANSOMWARE] What image do you want for the ransom wallpaper?
@@ -132,7 +134,7 @@ nara > something scary, like a skull
 
 nara > what did you find?
 I found 3 vulnerabilities in the Flask app. The critical one was a command
-injection in the /ping endpoint — user input goes straight to os.system()
+injection in the /api/pokemon endpoint — user input goes straight to os.system()
 with no sanitization. I exploited it to get shell access as www-data, then
 deployed the ransomware sim. Check VNC to see the desktop effects.
 
@@ -317,7 +319,7 @@ via docker exec:
   6. Confirm app is reachable
 ```
 
-### Container NARA
+### Container Lifecycle
 
 ```
 User types "init" in nara session
