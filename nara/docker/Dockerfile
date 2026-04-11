@@ -10,7 +10,7 @@ RUN apt-get update -qq && \
         xfce4 xfce4-terminal dbus-x11 \
         tigervnc-standalone-server tigervnc-common \
         python3 python3-pip git curl wget netcat-openbsd \
-        feh xdg-utils sudo \
+        feh xdg-utils sudo zenity psmisc \
         xz-utils ca-certificates \
         humanity-icon-theme \
         libgtk-3-0 libdbus-glib-1-2 libxt6 libasound2 libnss3 libatk-bridge2.0-0 \

