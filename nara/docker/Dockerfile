@@ -11,13 +11,10 @@ RUN apt-get update -qq && \
         feh xdg-utils sudo \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# VNC config — no password for lab use
+# XFCE as the VNC window manager (no password — lab use only)
 RUN mkdir -p /root/.vnc && \
-    echo "" | vncpasswd -f > /root/.vnc/passwd && \
-    chmod 600 /root/.vnc/passwd
-
-# XFCE as the VNC window manager
-RUN echo '#!/bin/sh\nstartxfce4 &' > /root/.vnc/xstartup && \
+    echo '#!/bin/sh' > /root/.vnc/xstartup && \
+    echo 'startxfce4 &' >> /root/.vnc/xstartup && \
     chmod +x /root/.vnc/xstartup
 
 COPY start_vnc.sh /start_vnc.sh
