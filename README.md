@@ -98,7 +98,7 @@ source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
-pip install -e .
+pip install .
 
 # Configure LLM backend
 cp .env.example .env
