@@ -84,7 +84,7 @@ def run(target_path: str, session: dict) -> list[dict]:
 # Tool runners                                                         #
 # ------------------------------------------------------------------ #
 
-_EXCLUDE_DIRS = [".venv", "venv", "__pycache__", ".git", "node_modules", ".egg-info"]
+_EXCLUDE_DIRS = [".venv", "venv", "__pycache__", ".git", "node_modules", ".egg-info", "build", "dist"]
 
 
 def _run_semgrep(target_path: str) -> str:
