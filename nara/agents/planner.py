@@ -7,6 +7,7 @@ Always ends with ransomware deployment as the final stage.
 
 import json
 from nara.utils.llm_client import LLMClient
+from nara.utils.llm_json import parse_json_array_from_llm
 from nara.utils import terminal_ui as ui
 
 _SYSTEM_PROMPT = """You are a red team kill chain architect with expertise in web application exploitation.
@@ -74,8 +75,8 @@ def run(findings: list[dict], session: dict) -> list[dict]:
 
     try:
         with ui.spinner("LLM designing kill chain..."):
-            raw = llm.chat(messages, system=_SYSTEM_PROMPT)
-        kill_chain = _parse_json_list(raw)
+            raw = llm.chat(messages, system=_SYSTEM_PROMPT, ollama_json=True)
+        kill_chain = parse_json_array_from_llm(raw)
     except (json.JSONDecodeError, RuntimeError) as e:
         ui.print_error(f"Kill chain generation failed: {e}")
         ui.print_info("Using fallback minimal kill chain.")
@@ -99,18 +100,6 @@ def run(findings: list[dict], session: dict) -> list[dict]:
 # ------------------------------------------------------------------ #
 # Helpers                                                              #
 # ------------------------------------------------------------------ #
-
-def _parse_json_list(raw: str) -> list[dict]:
-    """Strip markdown fences and parse a JSON array from LLM output."""
-    raw = raw.strip()
-    if raw.startswith("```"):
-        lines = raw.splitlines()
-        raw = "\n".join(lines[1:-1]).strip()
-    result = json.loads(raw)
-    if not isinstance(result, list):
-        raise json.JSONDecodeError("Expected a JSON array", raw, 0)
-    return result
-
 
 def _fallback_kill_chain(findings: list[dict]) -> list[dict]:
     """

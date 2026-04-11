@@ -7,7 +7,8 @@ _env_path = Path(__file__).parent.parent.parent / ".env"
 load_dotenv(dotenv_path=_env_path)
 
 LLM_BACKEND: str = os.getenv("LLM_BACKEND", "ollama").lower()
-OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5")
+# Default matches a typical `ollama pull` name; must equal a tag from `ollama list`.
+OLLAMA_MODEL: str = os.getenv("OLLAMA_MODEL", "qwen2.5-coder:7b-instruct")
 ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
 FEATHERLESS_API_KEY: str = os.getenv("FEATHERLESS_API_KEY", "")
 FEATHERLESS_MODEL: str = os.getenv("FEATHERLESS_MODEL", "meta-llama/Llama-3.3-70B-Instruct")

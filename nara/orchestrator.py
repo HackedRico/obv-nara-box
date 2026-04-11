@@ -11,6 +11,7 @@ from nara.utils import terminal_ui as ui
 from nara.agents import scanner, planner, exploiter
 
 _llm: LLMClient | None = None
+_docker = None  # DockerManager instance, lazy-loaded
 
 _HELP_TEXT = """[bold white]NARA — Available Commands[/bold white]
 
@@ -39,6 +40,15 @@ def _get_llm() -> LLMClient:
     if _llm is None:
         _llm = LLMClient()
     return _llm
+
+
+def _get_docker():
+    """Lazy-load DockerManager. Returns instance or raises on import failure."""
+    global _docker
+    if _docker is None:
+        from nara.docker.docker_manager import DockerManager
+        _docker = DockerManager()
+    return _docker
 
 
 def _classify_intent(text: str) -> str:
@@ -126,7 +136,9 @@ def route(user_input: str, session: dict) -> str:
             return "No kill chain to execute. Run 'plan' first."
         if not session["container_running"]:
             ui.print_info("Container not running — attempting to init first...")
-            return _handle_init(session)
+            init_result = _handle_init(session)
+            if not session["container_running"]:
+                return init_result  # init failed, bail out
 
         result = exploiter.run(session["kill_chain"], session)
         return result
@@ -149,18 +161,43 @@ def route(user_input: str, session: dict) -> str:
 # ------------------------------------------------------------------ #
 
 def _handle_init(session: dict) -> str:
-    ui.print_info("Container init — Person 1's docker_manager.py will handle this.")
-    ui.print_info("(docker_manager not yet integrated — stub)")
-    session["container_running"] = False
-    return "Container provisioning not yet implemented. Waiting for Person 1's docker_manager.py."
+    docker = _get_docker()
+
+    if docker.is_running():
+        session["container_running"] = True
+        return "Container already running. Use 'reset' to start fresh."
+
+    try:
+        ui.print_info("Building Docker image (first time may take a few minutes)...")
+        with ui.spinner("Building image..."):
+            docker.build()
+        ui.print_info("Starting container...")
+        with ui.spinner("Starting container..."):
+            docker.run()
+        session["container_running"] = True
+        ui.print_success("Container running — VNC on :5901, app port :8080")
+        return "Container is up. VNC accessible at :5901. Type 'scan <path>' to begin."
+    except Exception as e:
+        session["container_running"] = False
+        ui.print_error(f"Container init failed: {e}")
+        return f"Container init failed: {e}"
 
 
 def _handle_reset(session: dict) -> str:
-    ui.print_info("Resetting container — Person 1's docker_manager.reset() will handle this.")
-    session["container_running"] = False
-    session["findings"] = []
-    session["kill_chain"] = []
-    return "Session state cleared. Container reset stub — waiting for Person 1."
+    docker = _get_docker()
+
+    try:
+        with ui.spinner("Resetting container..."):
+            docker.reset()
+        session["container_running"] = True
+        session["findings"] = []
+        session["kill_chain"] = []
+        ui.print_success("Container reset — fresh environment ready.")
+        return "Session state cleared, container restarted. VNC on :5901."
+    except Exception as e:
+        session["container_running"] = False
+        ui.print_error(f"Container reset failed: {e}")
+        return f"Container reset failed: {e}"
 
 
 def _build_status(session: dict) -> str:

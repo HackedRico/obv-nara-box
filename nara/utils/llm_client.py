@@ -25,13 +25,14 @@ class LLMClient:
     # Public interface — all agents use this and only this                 #
     # ------------------------------------------------------------------ #
 
-    def chat(self, messages: list[dict], system: str = "") -> str:
+    def chat(self, messages: list[dict], system: str = "", *, ollama_json: bool = False) -> str:
         """
         Send a conversation to the configured LLM and return the response text.
 
         Args:
             messages: List of {"role": "user"|"assistant", "content": str}
             system:   Optional system prompt string.
+            ollama_json: If True and backend is Ollama, request JSON-valued output (format=json).
 
         Returns:
             The model's response as a plain string.
@@ -41,7 +42,7 @@ class LLMClient:
         """
         try:
             if self.backend == "ollama":
-                return self._chat_ollama(messages, system)
+                return self._chat_ollama(messages, system, json_mode=ollama_json)
             elif self.backend == "claude":
                 return self._chat_claude(messages, system)
             elif self.backend == "featherless":
@@ -75,7 +76,7 @@ class LLMClient:
                 api_key=cfg.FEATHERLESS_API_KEY,
             )
 
-    def _chat_ollama(self, messages: list[dict], system: str) -> str:
+    def _chat_ollama(self, messages: list[dict], system: str, *, json_mode: bool = False) -> str:
         import ollama
 
         full_messages = []
@@ -83,11 +84,16 @@ class LLMClient:
             full_messages.append({"role": "system", "content": system})
         full_messages.extend(messages)
 
-        response = ollama.chat(
-            model=cfg.OLLAMA_MODEL,
-            messages=full_messages,
-        )
-        return response["message"]["content"]
+        kwargs: dict = {
+            "model": cfg.OLLAMA_MODEL,
+            "messages": full_messages,
+        }
+        if json_mode:
+            kwargs["format"] = "json"
+
+        response = ollama.chat(**kwargs)
+        content = response["message"]["content"]
+        return content if isinstance(content, str) else ""
 
     def _chat_claude(self, messages: list[dict], system: str) -> str:
         kwargs = {

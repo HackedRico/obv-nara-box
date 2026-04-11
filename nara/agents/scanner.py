@@ -6,9 +6,11 @@ deduplicate and prioritize findings into a structured list.
 """
 
 import json
+import os
 import subprocess
 import sys
 from nara.utils.llm_client import LLMClient
+from nara.utils.llm_json import parse_json_array_from_llm
 from nara.utils import terminal_ui as ui
 
 _SYSTEM_PROMPT = """You are a senior application security engineer.
@@ -67,8 +69,8 @@ def run(target_path: str, session: dict) -> list[dict]:
 
     try:
         with ui.spinner("LLM triaging findings..."):
-            raw = llm.chat(messages, system=_SYSTEM_PROMPT)
-        findings = _parse_json_list(raw)
+            raw = llm.chat(messages, system=_SYSTEM_PROMPT, ollama_json=True)
+        findings = parse_json_array_from_llm(raw)
     except (json.JSONDecodeError, RuntimeError) as e:
         ui.print_error(f"LLM triage failed: {e}")
         ui.print_info("Falling back to raw tool output parsing.")
@@ -83,14 +85,20 @@ def run(target_path: str, session: dict) -> list[dict]:
 # Tool runners                                                         #
 # ------------------------------------------------------------------ #
 
+_EXCLUDE_DIRS = [".venv", "venv", "__pycache__", ".git", "node_modules", ".egg-info", "build", "dist"]
+
+
 def _run_semgrep(target_path: str) -> str:
     """Run semgrep and return raw JSON output string, or empty string on failure."""
     try:
-        result = subprocess.run(
-            ["semgrep", "--config", "auto", target_path, "--json",
-             "--no-rewrite-rule-ids", "--quiet"],
-            capture_output=True, text=True, timeout=120
-        )
+        cmd = [
+            "semgrep", "--config", "auto", target_path, "--json",
+            "--no-rewrite-rule-ids", "--quiet",
+        ]
+        for d in _EXCLUDE_DIRS:
+            cmd.extend(["--exclude", d])
+        ui.print_info("Running Semgrep...")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         return result.stdout or ""
     except FileNotFoundError:
         ui.print_info("Semgrep not found — skipping. Install: pip install semgrep")
@@ -106,8 +114,12 @@ def _run_semgrep(target_path: str) -> str:
 def _run_bandit(target_path: str) -> str:
     """Run bandit and return raw JSON output string, or empty string on failure."""
     try:
+        exclude = ",".join(
+            os.path.join(target_path, d) for d in _EXCLUDE_DIRS
+        )
+        ui.print_info("Running Bandit...")
         result = subprocess.run(
-            ["bandit", "-r", target_path, "-f", "json", "-q"],
+            ["bandit", "-r", target_path, "-f", "json", "-q", "--exclude", exclude],
             capture_output=True, text=True, timeout=60
         )
         # Bandit exits non-zero when it finds issues — that's normal
@@ -126,19 +138,6 @@ def _run_bandit(target_path: str) -> str:
 # ------------------------------------------------------------------ #
 # Helpers                                                              #
 # ------------------------------------------------------------------ #
-
-def _parse_json_list(raw: str) -> list[dict]:
-    """Strip markdown fences and parse a JSON array from LLM output."""
-    raw = raw.strip()
-    # Strip ```json ... ``` or ``` ... ```
-    if raw.startswith("```"):
-        lines = raw.splitlines()
-        raw = "\n".join(lines[1:-1]).strip()
-    result = json.loads(raw)
-    if not isinstance(result, list):
-        raise json.JSONDecodeError("Expected a JSON array", raw, 0)
-    return result
-
 
 def _parse_bandit_fallback(bandit_out: str) -> list[dict]:
     """
