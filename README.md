@@ -2,7 +2,9 @@
 
 An AI-powered penetration testing CLI that orchestrates three agents to scan codebases, plan attack chains, and execute exploits against an isolated Docker container — streaming the entire kill chain live to the terminal.
 
-Built for **Bitcamp 2025** (Cybersecurity Track + Neelbauer Agent Revolution Award).
+Built for **Bitcamp 2026** (Cybersecurity Track + Neelbauer Agent Revolution Award).
+
+Repo for dummy app: https://github.com/aprameyak/exploitable-dummy-app
 
 > Security tools tell you *what* is vulnerable. NARA shows you *what happens when it gets exploited* — autonomously, in real time, end to end.
 
