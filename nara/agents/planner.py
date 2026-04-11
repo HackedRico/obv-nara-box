@@ -75,7 +75,7 @@ def run(findings: list[dict], session: dict) -> list[dict]:
 
     try:
         with ui.spinner("LLM designing kill chain..."):
-            raw = llm.chat(messages, system=_SYSTEM_PROMPT)
+            raw = llm.chat(messages, system=_SYSTEM_PROMPT, ollama_json=True)
         kill_chain = parse_json_array_from_llm(raw)
     except (json.JSONDecodeError, RuntimeError) as e:
         ui.print_error(f"Kill chain generation failed: {e}")

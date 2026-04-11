@@ -69,7 +69,7 @@ def run(target_path: str, session: dict) -> list[dict]:
 
     try:
         with ui.spinner("LLM triaging findings..."):
-            raw = llm.chat(messages, system=_SYSTEM_PROMPT)
+            raw = llm.chat(messages, system=_SYSTEM_PROMPT, ollama_json=True)
         findings = parse_json_array_from_llm(raw)
     except (json.JSONDecodeError, RuntimeError) as e:
         ui.print_error(f"LLM triage failed: {e}")
