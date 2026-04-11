@@ -77,6 +77,7 @@ def run(target_path: str, session: dict) -> list[dict]:
         with ui.spinner("LLM triaging findings..."):
             raw = llm.chat(messages, system=_SYSTEM_PROMPT, ollama_json=True)
         findings = parse_json_array_from_llm(raw)
+        findings = [_normalize_finding(f) for f in findings]
     except (json.JSONDecodeError, RuntimeError) as e:
         ui.print_error(f"LLM triage failed: {e}")
         # Show first 500 chars of raw response for debugging
@@ -105,16 +106,15 @@ def _condense_semgrep(raw: str) -> str:
         condensed = []
         for r in results:
             condensed.append({
-                "check_id": r.get("check_id", ""),
-                "path": r.get("path", ""),
-                "start_line": r.get("start", {}).get("line", 0),
+                "rule": r.get("check_id", ""),
+                "file": r.get("path", ""),
+                "line": r.get("start", {}).get("line", 0),
                 "message": r.get("extra", {}).get("message", "")[:200],
                 "severity": r.get("extra", {}).get("severity", ""),
-                "lines": r.get("extra", {}).get("lines", "")[:200],
+                "code_snippet": r.get("extra", {}).get("lines", "")[:200],
             })
         return json.dumps(condensed, indent=2) if condensed else "(no results)"
     except (json.JSONDecodeError, KeyError):
-        # Can't parse — send truncated raw text
         return raw[:4000]
 
 
@@ -126,17 +126,40 @@ def _condense_bandit(raw: str) -> str:
         condensed = []
         for r in results:
             condensed.append({
-                "test_name": r.get("test_name", ""),
-                "filename": r.get("filename", ""),
-                "line_number": r.get("line_number", 0),
-                "issue_text": r.get("issue_text", "")[:200],
-                "issue_severity": r.get("issue_severity", ""),
-                "issue_confidence": r.get("issue_confidence", ""),
-                "code": r.get("code", "")[:200],
+                "test_id": r.get("test_name", ""),
+                "file": r.get("filename", ""),
+                "line": r.get("line_number", 0),
+                "issue": r.get("issue_text", "")[:200],
+                "severity": r.get("issue_severity", ""),
+                "confidence": r.get("issue_confidence", ""),
+                "code_snippet": r.get("code", "")[:200],
             })
         return json.dumps(condensed, indent=2) if condensed else "(no results)"
     except (json.JSONDecodeError, KeyError):
         return raw[:4000]
+
+
+def _normalize_finding(f: dict) -> dict:
+    """Ensure every finding dict has the expected keys, mapping common alternatives."""
+    # Map alternative key names the LLM might use
+    _ALT = {
+        "type": ["vulnerability_type", "vuln_type", "category", "kind", "test_name", "check_id", "rule"],
+        "file": ["filename", "path", "filepath", "file_path", "source_file"],
+        "line": ["line_number", "lineno", "start_line", "line_no"],
+        "severity": ["issue_severity", "risk", "level", "priority"],
+        "description": ["issue_text", "message", "desc", "summary", "detail", "issue"],
+        "exploitability": ["exploit", "attack_vector", "exploitation", "how_to_exploit"],
+    }
+    normalized = {}
+    for key, alts in _ALT.items():
+        val = f.get(key)
+        if not val or val == "":
+            for alt in alts:
+                val = f.get(alt)
+                if val and val != "":
+                    break
+        normalized[key] = val or ("Other" if key == "type" else "unknown" if key == "file" else 0 if key == "line" else "medium" if key == "severity" else "")
+    return normalized
 
 
 # ------------------------------------------------------------------ #
@@ -208,14 +231,22 @@ def _parse_bandit_fallback(bandit_out: str) -> list[dict]:
         data = json.loads(bandit_out)
         results = data.get("results", [])
         findings = []
-        for r in results[:10]:  # Cap at 10 raw results
+        _TYPE_MAP = {
+            "B102": "CommandInjection", "B602": "CommandInjection",
+            "B603": "CommandInjection", "B604": "CommandInjection",
+            "B608": "SQLi", "B610": "SQLi", "B611": "SQLi",
+            "B301": "Other", "B303": "Other", "B501": "Other",
+            "B201": "CommandInjection",
+        }
+        for r in results[:_MAX_RESULTS]:
+            test_id = r.get("test_id", "")
             findings.append({
-                "type": r.get("test_name", "Unknown"),
+                "type": _TYPE_MAP.get(test_id, r.get("test_name", "Other")),
                 "file": r.get("filename", "unknown"),
                 "line": r.get("line_number", 0),
                 "severity": r.get("issue_severity", "medium").lower(),
                 "description": r.get("issue_text", ""),
-                "exploitability": "See Bandit output for details.",
+                "exploitability": f"Bandit {test_id}: {r.get('issue_confidence', 'MEDIUM')} confidence.",
             })
         return findings
     except Exception:
