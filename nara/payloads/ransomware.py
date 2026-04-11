@@ -21,10 +21,11 @@ import sys
 import zlib
 
 # Absolute paths — XFCE resolves themed names inconsistently in minimal images
-_ICON_WARN = "/usr/share/icons/Humanity/status/48/dialog-warning.svg"
-_ICON_FOLDER = "/usr/share/icons/Humanity/places/48/folder.svg"
-_ICON_BROWSER = "/usr/share/icons/Humanity/apps/48/web-browser.svg"
-_ICON_MAIL = "/usr/share/icons/Humanity/categories/48/applications-mail.svg"
+_ICON_DIR = "/tmp/nara_icons"
+_ICON_WARN = os.path.join(_ICON_DIR, "rocket_warn.png")
+_ICON_FOLDER = os.path.join(_ICON_DIR, "rocket_folder.png")
+_ICON_BROWSER = os.path.join(_ICON_DIR, "rocket_browser.png")
+_ICON_MAIL = os.path.join(_ICON_DIR, "rocket_mail.png")
 
 # ------------------------------------------------------------------ #
 # Ransom note — customizable via CLI argument or env var              #
@@ -58,7 +59,7 @@ DEFAULT_NOTE = """
 """
 
 DESKTOP = os.path.expanduser("~/Desktop")
-WALLPAPER_PATH = "/tmp/nara_ransom_wallpaper.png"
+WALLPAPER_PATH = "/tmp/nara_ransom_wallpaper.jpg"
 DUMMY_FILES_DIR = "/tmp/nara_demo_files"
 
 
@@ -114,32 +115,56 @@ def fake_encrypt_files():
 
 def hijack_desktop_shortcuts():
     """
-    Rename existing .desktop launchers and drop ransom-themed shortcuts so the
-    XFCE desktop visibly reflects the 'takeover' in VNC.
+    Replace ALL existing desktop shortcuts with Team Rocket R-branded locked versions,
+    then drop ransom-themed shortcuts so the XFCE desktop visibly reflects the takeover.
     """
     os.makedirs(DESKTOP, exist_ok=True)
     readme = os.path.join(DESKTOP, "README_RANSOM.txt")
+    rocket_icon = _ICON_FOLDER  # Red R on dark — used for all hijacked icons
 
+    # Replace ALL existing .desktop files with "LOCKED" versions using the R icon
     for name in list(os.listdir(DESKTOP)):
         path = os.path.join(DESKTOP, name)
-        if (
-            name.endswith(".desktop")
-            and "NARA_" not in name
-            and os.path.isfile(path)
-        ):
-            try:
-                locked = path + ".NARA_LOCKED"
-                os.rename(path, locked)
-                print(f"[RANSOMWARE] Locked launcher: {name} → {name}.NARA_LOCKED")
-            except OSError as e:
-                print(f"[RANSOMWARE] Could not lock {name}: {e}")
+        if not name.endswith(".desktop") or "NARA_" in name or not os.path.isfile(path):
+            continue
 
-    # Ransom shortcuts (open ransom note in a terminal so it always works in the container)
+        # Extract the original app name from the .desktop file
+        original_name = name.replace(".desktop", "")
+        try:
+            with open(path, "r") as f:
+                for line in f:
+                    if line.startswith("Name="):
+                        original_name = line.strip().split("=", 1)[1]
+                        break
+        except Exception:
+            pass
+
+        # Overwrite the shortcut with a locked version using the R icon
+        locked_lines = [
+            "[Desktop Entry]",
+            "Version=1.0",
+            "Type=Application",
+            f"Name={original_name} — LOCKED",
+            "Comment=NARA ransomware simulation",
+            f"Icon={rocket_icon}",
+            "Terminal=false",
+            f"Exec=xfce4-terminal --hold -e \"bash -c 'head -60 {readme}; echo; echo ---; sleep 600'\"",
+            "",
+        ]
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(locked_lines))
+        try:
+            os.chmod(path, 0o755)
+        except OSError:
+            pass
+        print(f"[RANSOMWARE] Hijacked: {name} → {original_name} — LOCKED")
+
+    # Drop ransom shortcuts
     templates = [
         ("NARA__READ_ME.desktop", "!!! READ ME — RANSOM !!!", _ICON_WARN),
-        ("NARA__FILES_LOCKED.desktop", "Documents — LOCKED", _ICON_FOLDER),
-        ("NARA__BROWSER_LOCKED.desktop", "Browser — LOCKED", _ICON_BROWSER),
-        ("NARA__MAIL_LOCKED.desktop", "Mail — LOCKED", _ICON_MAIL),
+        ("NARA__FILES_LOCKED.desktop", "Documents — ENCRYPTED", _ICON_FOLDER),
+        ("NARA__BROWSER_LOCKED.desktop", "Browser — ENCRYPTED", _ICON_BROWSER),
+        ("NARA__MAIL_LOCKED.desktop", "Mail — ENCRYPTED", _ICON_MAIL),
     ]
     for fname, title, icon in templates:
         path = os.path.join(DESKTOP, fname)
@@ -151,7 +176,6 @@ def hijack_desktop_shortcuts():
             "Comment=NARA ransomware simulation",
             f"Icon={icon}",
             "Terminal=false",
-            # Hold terminal open so the user can read the note in VNC
             f"Exec=xfce4-terminal --hold -e \"bash -c 'head -60 {readme}; echo; echo ---; sleep 600'\"",
             "",
         ]
@@ -164,42 +188,120 @@ def hijack_desktop_shortcuts():
         print(f"[RANSOMWARE] Desktop shortcut → {path}")
 
 
-def _create_ransom_wallpaper():
-    """
-    Create a solid dark-red PNG using only stdlib (struct + zlib).
-    Returns the path to the created file.
-    """
-    width, height = 1920, 1080
+# ── Team Rocket "R" bitmap (16x20 grid, 1 = red, 0 = background) ────
+_ROCKET_R = [
+    "0011111111111100",
+    "0011111111111110",
+    "0011100000011111",
+    "0011100000001111",
+    "0011100000001111",
+    "0011100000001111",
+    "0011100000011111",
+    "0011111111111110",
+    "0011111111111100",
+    "0011111111110000",
+    "0011100011110000",
+    "0011100001111000",
+    "0011100000111100",
+    "0011100000011110",
+    "0011100000001111",
+    "0011100000000111",
+]
 
-    def make_chunk(name: bytes, data: bytes) -> bytes:
+
+def _make_png(width: int, height: int, pixels: list[list[tuple]]) -> bytes:
+    """Build a raw PNG from a 2D list of (R, G, B) tuples. Stdlib only."""
+    def chunk(name: bytes, data: bytes) -> bytes:
         c = name + data
         return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
 
-    # PNG signature
     png = b"\x89PNG\r\n\x1a\n"
-
-    # IHDR: width, height, bit depth=8, color type=2 (RGB), compression=0, filter=0, interlace=0
-    ihdr_data = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
-    png += make_chunk(b"IHDR", ihdr_data)
-
-    # IDAT: raw image data (dark red #1a0000 background with a centered message in white)
-    # Build rows: filter_byte + RGB pixels per row
-    # To keep it fast, use a simple scanline approach with a pattern
-    bg_r, bg_g, bg_b = 26, 0, 0  # #1a0000 dark red
+    png += chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0))
 
     rows = bytearray()
-    for y in range(height):
+    for row in pixels:
         rows += b"\x00"  # filter type None
+        for r, g, b in row:
+            rows += bytes([r, g, b])
+
+    png += chunk(b"IDAT", zlib.compress(bytes(rows), level=1))
+    png += chunk(b"IEND", b"")
+    return png
+
+
+def _draw_rocket_r(width: int, height: int, bg: tuple, fg: tuple) -> list:
+    """Render the Team Rocket R bitmap scaled to fill the given dimensions."""
+    bmp_h = len(_ROCKET_R)
+    bmp_w = len(_ROCKET_R[0])
+
+    # Scale factor — R fills ~60% of the smaller dimension
+    scale = int(min(width, height) * 0.6 / max(bmp_w, bmp_h))
+    if scale < 1:
+        scale = 1
+
+    r_w = bmp_w * scale
+    r_h = bmp_h * scale
+    ox = (width - r_w) // 2
+    oy = (height - r_h) // 2
+
+    pixels = []
+    for y in range(height):
+        row = []
         for x in range(width):
-            rows += bytes([bg_r, bg_g, bg_b])
+            bx = (x - ox) // scale
+            by = (y - oy) // scale
+            if 0 <= bx < bmp_w and 0 <= by < bmp_h and _ROCKET_R[by][bx] == "1":
+                row.append(fg)
+            else:
+                row.append(bg)
+        pixels.append(row)
+    return pixels
 
-    png += make_chunk(b"IDAT", zlib.compress(bytes(rows), level=1))
-    png += make_chunk(b"IEND", b"")
 
-    with open(WALLPAPER_PATH, "wb") as f:
+def _create_ransom_wallpaper():
+    """
+    Use the Team Rocket wallpaper (Jessie & James silhouette) if the exploiter
+    copied it into the container. Falls back to a generated red R on black.
+    Returns the path to the created file.
+    """
+    # The exploiter copies the real Team Rocket wallpaper here before running us
+    if os.path.exists(WALLPAPER_PATH) and os.path.getsize(WALLPAPER_PATH) > 1000:
+        print(f"[RANSOMWARE] Using Team Rocket wallpaper → {WALLPAPER_PATH}")
+        return WALLPAPER_PATH
+
+    # Fallback: generate a red R on black
+    width, height = 1920, 1080
+    bg = (10, 10, 10)       # near-black
+    fg = (200, 0, 0)        # Team Rocket red
+
+    pixels = _draw_rocket_r(width, height, bg, fg)
+    png_path = WALLPAPER_PATH.replace(".jpg", ".png")
+    png = _make_png(width, height, pixels)
+
+    with open(png_path, "wb") as f:
         f.write(png)
 
-    return WALLPAPER_PATH
+    return png_path
+
+
+def generate_rocket_icons():
+    """Generate Team Rocket 'R' icon PNGs for desktop shortcuts."""
+    os.makedirs(_ICON_DIR, exist_ok=True)
+
+    icon_configs = [
+        (_ICON_WARN,    (200, 0, 0),   (255, 255, 255)),  # red bg, white R
+        (_ICON_FOLDER,  (40, 40, 40),  (200, 0, 0)),      # dark bg, red R
+        (_ICON_BROWSER, (40, 40, 40),  (200, 0, 0)),      # dark bg, red R
+        (_ICON_MAIL,    (40, 40, 40),  (200, 0, 0)),      # dark bg, red R
+    ]
+
+    for path, bg, fg in icon_configs:
+        pixels = _draw_rocket_r(48, 48, bg, fg)
+        png = _make_png(48, 48, pixels)
+        with open(path, "wb") as f:
+            f.write(png)
+
+    print(f"[RANSOMWARE] Team Rocket icons generated → {_ICON_DIR}")
 
 
 def change_wallpaper():
@@ -288,6 +390,7 @@ def main(custom_message: str = ""):
     print_ascii_skull()
 
     drop_ransom_note(custom_message)
+    generate_rocket_icons()
     hijack_desktop_shortcuts()
     fake_encrypt_files()
     change_wallpaper()
