@@ -245,6 +245,8 @@ def _handle_pipeline(user_input: str, session: dict) -> str:
 def _clone_repo(url: str) -> str | None:
     """Clone a git repo URL into nara_targets/ and return the local path."""
     import re
+    # Strip trailing punctuation (user might type "scan url." with a period)
+    url = url.rstrip(".,;:!?")
     # Normalize GitHub browser URLs to clone URLs
     # e.g. https://github.com/user/repo/tree/main → https://github.com/user/repo
     url = re.sub(r"/(tree|blob)/[^/].*$", "", url.rstrip("/"))

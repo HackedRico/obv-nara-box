@@ -66,6 +66,30 @@ class DockerManager:
         )
         return (result.stdout + result.stderr).strip()
 
+    def exec_detached(self, cmd: str) -> None:
+        """Run a command inside the container in detached mode (survives after exec exits)."""
+        subprocess.run(
+            ["docker", "exec", "-d", CONTAINER_NAME, "bash", "-c", cmd],
+            check=False,
+        )
+
+    def copy_to_container(self, host_path: str, container_path: str) -> None:
+        """Copy a file from the host filesystem into the running container."""
+        subprocess.run(
+            ["docker", "cp", host_path, f"{CONTAINER_NAME}:{container_path}"],
+            check=True,
+        )
+
+    def append_to_container_file(self, path: str, text: str) -> None:
+        """Append UTF-8 text to a file inside the container (safe for arbitrary bytes as text)."""
+        proc = subprocess.Popen(
+            ["docker", "exec", "-i", CONTAINER_NAME, "tee", "-a", path],
+            stdin=subprocess.PIPE,
+        )
+        proc.communicate(text.encode("utf-8", errors="replace"), timeout=120)
+        if proc.wait() != 0:
+            raise RuntimeError(f"append_to_container_file failed for {path}")
+
     def reset(self) -> None:
         """Stop and remove the container, then start a fresh one."""
         subprocess.run(

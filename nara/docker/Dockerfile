@@ -9,6 +9,7 @@ RUN apt-get update -qq && \
         tigervnc-standalone-server tigervnc-common \
         python3 python3-pip git curl wget netcat-openbsd \
         feh xdg-utils sudo \
+        firefox \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # XFCE as the VNC window manager

