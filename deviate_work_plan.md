@@ -1,14 +1,14 @@
-# NARA — Work Division (4 People, ~36 Hours)
+# NARA — Work Division (3 People, ~36 Hours)
 
 Bitcamp 2025 | April 11–13 | Goal: working demo by Sunday 9:30 AM
 
 ---
 
-## Person 1 — Docker & Container Infrastructure
+## Person 1 — Docker Infrastructure + CLI/LLM Client
 
-**Own:** Everything the target environment runs on.
+**Own:** The container, the `nara` command, the REPL, and the LLM abstraction layer.
 
-### Tasks
+### Tasks — Docker
 - [ ] `nara/docker/Dockerfile` — Ubuntu 22.04 + XFCE4 + TigerVNC, expose ports 5901 (VNC) and 8080 (app)
 - [ ] `nara/docker/start_vnc.sh` — entrypoint that boots XFCE desktop + VNC server on container start
 - [ ] `nara/docker/docker_manager.py` — Python wrapper for container lifecycle:
@@ -19,14 +19,7 @@ Bitcamp 2025 | April 11–13 | Goal: working demo by Sunday 9:30 AM
   - `is_running()` — health check
 - [ ] Verify: `docker build`, `docker run`, VNC accessible at `:5901`, `docker exec` works
 
-### Handoff to team
-- `docker_manager.py` must be importable by the Exploiter agent
-- `exec(cmd)` is the critical method — Exploiter calls it constantly
-- Document what the container has baked in vs. what Exploiter installs at runtime
-
-**Own:** The `nara` command, the interactive REPL, and the wiring between everything.
-
-### Tasks
+### Tasks — CLI + LLM Client
 - [ ] `.env.example` — template with `LLM_BACKEND`, `OLLAMA_MODEL`, `ANTHROPIC_API_KEY`
 - [ ] `nara/utils/config.py` — loads `.env`, exposes config values
 - [ ] `nara/utils/llm_client.py` — unified LLM interface:
@@ -49,27 +42,29 @@ Bitcamp 2025 | April 11–13 | Goal: working demo by Sunday 9:30 AM
 - [ ] Verify: `nara` starts, prints the banner, responds to chat, intent routing works without full agents
 
 ### Handoff to team
+- `docker_manager.py` must be importable by the Exploiter agent (Person 3)
+- `exec(cmd)` is the critical method — Exploiter calls it constantly
 - `llm_client.py` is shared by all three agents — get this done first
 - `terminal_ui.py` helpers should be usable by all agents for consistent output
-- `orchestrator.py` calls agents — agree on function signatures with Persons 1 and 4 early
+- `orchestrator.py` calls agents — agree on function signatures with Person 3 early
 
 ---
 
 ## Person 2 — Vulnerable Flask App (Separate Repo)
 
-**Own:** The target that gets scanned and exploited. Lives in a **separate public GitHub repo**.
+**Own:** The Pokemon-themed target that gets scanned and exploited. Lives in a **separate public GitHub repo**.
 
 ### Tasks
 - [ ] Create a new public repo (e.g., `github.com/<user>/pokedex-vuln`)
 - [ ] Pokemon-themed Flask REST API with these deliberate vulnerabilities:
 
-| Endpoint | Vulnerability |
-|---|---|
-| `GET /api/pokemon?name=<input>` | **Command injection** — `os.system(f"grep {name} pokedex.csv")` |
-| `POST /api/team` | SQL injection — raw string concat into SQLite query |
-| `GET /api/pokedex?search=<input>` | Reflected XSS — search term rendered back unsanitized |
-| `POST /api/upload-sprite` | Unrestricted file upload — no extension/MIME validation |
-| `GET /api/stats?pokemon=<input>` | SSRF — user controls the URL being fetched |
+| Endpoint | Feature | Vulnerability |
+|---|---|---|
+| `GET /api/pokemon?name=<input>` | Pokemon lookup | **Command injection** — `os.system(f"grep {name} pokedex.csv")` |
+| `POST /api/team` | Save your Pokemon team | SQL injection — raw string concat into SQLite query |
+| `GET /api/pokedex?search=<input>` | Search Pokedex | Reflected XSS — search term rendered back unsanitized |
+| `POST /api/upload-sprite` | Upload custom sprite | Unrestricted file upload — no extension/MIME validation |
+| `GET /api/stats?pokemon=<input>` | Fetch stats from "external API" | SSRF — user controls the URL being fetched |
 
 - [ ] `pokedex.csv` + `pokedex.db` (SQLite) — minimal Pokemon data for the endpoints to use
 - [ ] Pokemon-themed HTML/CSS/JS frontend — looks like a legit Pokedex app (not obviously a security demo)
@@ -88,7 +83,7 @@ Bitcamp 2025 | April 11–13 | Goal: working demo by Sunday 9:30 AM
 **Own:** The three AI agents and the ransomware simulation. This is the core intelligence of NARA.
 
 ### Dependencies
-- Needs `llm_client.py` from Person 3 (get a stub early if needed)
+- Needs `llm_client.py` from Person 1 (get a stub early if needed)
 - Needs `docker_manager.exec()` from Person 1 for the Exploiter
 - Needs the vuln app repo URL from Person 2
 
@@ -132,8 +127,8 @@ Bitcamp 2025 | April 11–13 | Goal: working demo by Sunday 9:30 AM
 
 | Time | Milestone |
 |---|---|
-| ~Hour 6 | P1: Container running + VNC accessible. P2: Flask app runs locally. P3: `nara` REPL starts + `llm_client.py` done |
-| ~Hour 12 | P1+P2 integration: Exploiter can provision container and start Flask app. P3+P4: Scanner returns findings from a test codebase |
+| ~Hour 6 | P1: Container running + VNC accessible + `nara` REPL starts + `llm_client.py` done. P2: Flask app runs locally. |
+| ~Hour 12 | P1+P3 integration: Exploiter can provision container and start Flask app. P3: Scanner returns findings from the pokedex-vuln codebase. |
 | ~Hour 20 | Full pipeline: scan → plan → exploit → output visible in terminal |
 | ~Hour 28 | Ransomware deploys, VNC shows desktop effects. Full chain clean. |
 | ~Hour 33 | Polish, switch to Claude API, demo rehearsal |
@@ -144,16 +139,18 @@ Bitcamp 2025 | April 11–13 | Goal: working demo by Sunday 9:30 AM
 
 ```python
 # docker_manager.py (Person 1)
-manager.exec(cmd: str) -> str        # run cmd in container, return output
+manager.build() -> None              # build the image
 manager.run() -> None                # start container
+manager.exec(cmd: str) -> str        # run cmd in container, return output
 manager.reset() -> None              # fresh container
+manager.is_running() -> bool         # health check
 
-# llm_client.py (Person 3)
+# llm_client.py (Person 1)
 llm.chat(messages: list, system: str) -> str
 
-# scanner.py output (Person 4 → Planner)
+# scanner.py output (Person 3 → Planner)
 findings: list[dict]  # [{type, file, line, severity, description}]
 
-# planner.py output (Person 4 → Exploiter)
+# planner.py output (Person 3 → Exploiter)
 kill_chain: list[dict]  # [{step, command, expected_outcome}]
 ```
