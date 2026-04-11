@@ -1,4 +1,5 @@
 """Allow running nara as: python -m nara"""
 from nara.cli import main
 
-main()
+if __name__ == "__main__":
+    main()
