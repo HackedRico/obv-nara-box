@@ -15,7 +15,18 @@ from pathlib import Path
 
 IMAGE_NAME = "nara-target"
 CONTAINER_NAME = "nara-container"
-DOCKERFILE_DIR = str(Path(__file__).parent)
+
+# Resolve to the source tree, not the site-packages copy.
+# docker_manager.py lives at nara/docker/docker_manager.py,
+# so we need nara/docker/ which contains the Dockerfile.
+_THIS_DIR = Path(__file__).resolve().parent
+# If installed as non-editable, __file__ is in site-packages and the
+# Dockerfile won't be there. Walk up to find the repo root instead.
+if (_THIS_DIR / "Dockerfile").exists():
+    DOCKERFILE_DIR = str(_THIS_DIR)
+else:
+    # Fallback: assume cwd is the repo root
+    DOCKERFILE_DIR = str(Path.cwd() / "nara" / "docker")
 
 
 class DockerManager:

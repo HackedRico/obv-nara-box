@@ -5,6 +5,13 @@ setup(
     version="0.1.0",
     description="Autonomous AI-powered penetration testing CLI",
     packages=find_packages(),
+    package_data={
+        "nara": [
+            "docker/Dockerfile",
+            "docker/start_vnc.sh",
+            "payloads/assets/*",
+        ],
+    },
     python_requires=">=3.10",
     install_requires=[
         "anthropic>=0.40.0",
