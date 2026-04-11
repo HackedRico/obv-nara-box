@@ -10,6 +10,7 @@ import os
 import subprocess
 import sys
 from nara.utils.llm_client import LLMClient
+from nara.utils.llm_json import parse_json_array_from_llm
 from nara.utils import terminal_ui as ui
 
 _SYSTEM_PROMPT = """You are a senior application security engineer.
@@ -69,7 +70,7 @@ def run(target_path: str, session: dict) -> list[dict]:
     try:
         with ui.spinner("LLM triaging findings..."):
             raw = llm.chat(messages, system=_SYSTEM_PROMPT)
-        findings = _parse_json_list(raw)
+        findings = parse_json_array_from_llm(raw)
     except (json.JSONDecodeError, RuntimeError) as e:
         ui.print_error(f"LLM triage failed: {e}")
         ui.print_info("Falling back to raw tool output parsing.")
@@ -137,19 +138,6 @@ def _run_bandit(target_path: str) -> str:
 # ------------------------------------------------------------------ #
 # Helpers                                                              #
 # ------------------------------------------------------------------ #
-
-def _parse_json_list(raw: str) -> list[dict]:
-    """Strip markdown fences and parse a JSON array from LLM output."""
-    raw = raw.strip()
-    # Strip ```json ... ``` or ``` ... ```
-    if raw.startswith("```"):
-        lines = raw.splitlines()
-        raw = "\n".join(lines[1:-1]).strip()
-    result = json.loads(raw)
-    if not isinstance(result, list):
-        raise json.JSONDecodeError("Expected a JSON array", raw, 0)
-    return result
-
 
 def _parse_bandit_fallback(bandit_out: str) -> list[dict]:
     """
