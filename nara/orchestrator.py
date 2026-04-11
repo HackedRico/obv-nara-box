@@ -179,7 +179,12 @@ def route(user_input: str, session: dict) -> str:
 
 def _clone_repo(url: str) -> str | None:
     """Clone a git repo URL into nara_targets/ and return the local path."""
-    # Derive repo name from URL (strip trailing .git and slashes)
+    import re
+    # Normalize GitHub browser URLs to clone URLs
+    # e.g. https://github.com/user/repo/tree/main → https://github.com/user/repo
+    url = re.sub(r"/(tree|blob)/[^/].*$", "", url.rstrip("/"))
+
+    # Derive repo name from URL (strip trailing .git)
     repo_name = url.rstrip("/").split("/")[-1].removesuffix(".git")
     dest = TARGETS_DIR / repo_name
 
