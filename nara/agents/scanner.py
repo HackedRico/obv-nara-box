@@ -72,19 +72,26 @@ def run(target_path: str, session: dict) -> list[dict]:
         )
     }]
 
+    # Parse Bandit findings as a baseline (always available)
+    bandit_findings = _parse_bandit_fallback(bandit_out)
+
     raw = None
     try:
         with ui.spinner("LLM triaging findings..."):
             raw = llm.chat(messages, system=_SYSTEM_PROMPT, ollama_json=True)
         findings = parse_json_array_from_llm(raw)
         findings = [_normalize_finding(f) for f in findings]
+
+        # If LLM returned suspiciously few findings, merge in Bandit baseline
+        if len(findings) < len(bandit_findings):
+            ui.print_info(f"LLM returned {len(findings)} finding(s) but tools found {len(bandit_findings)} — merging.")
+            findings = _merge_findings(findings, bandit_findings)
     except (json.JSONDecodeError, RuntimeError) as e:
         ui.print_error(f"LLM triage failed: {e}")
-        # Show first 500 chars of raw response for debugging
         if raw:
             ui.print_info(f"Raw LLM response (first 500 chars): {raw[:500]}")
         ui.print_info("Falling back to raw tool output parsing.")
-        findings = _parse_bandit_fallback(bandit_out)
+        findings = bandit_findings
 
     session["findings"] = findings
     ui.print_info(f"Scanner complete — {len(findings)} finding(s).")
@@ -161,6 +168,24 @@ def _normalize_finding(f: dict) -> dict:
                     break
         normalized[key] = val or ("Other" if key == "type" else "unknown" if key == "file" else 0 if key == "line" else "medium" if key == "severity" else "")
     return normalized
+
+
+def _merge_findings(llm_findings: list[dict], bandit_findings: list[dict]) -> list[dict]:
+    """Merge LLM-triaged findings with Bandit baseline, deduplicating by file+line."""
+    seen = set()
+    merged = []
+    # LLM findings take priority (better descriptions)
+    for f in llm_findings:
+        key = (f.get("file", ""), f.get("line", 0))
+        seen.add(key)
+        merged.append(f)
+    # Add Bandit findings not already covered
+    for f in bandit_findings:
+        key = (f.get("file", ""), f.get("line", 0))
+        if key not in seen:
+            seen.add(key)
+            merged.append(f)
+    return merged
 
 
 # ------------------------------------------------------------------ #

@@ -20,6 +20,7 @@ _SESSION_TEMPLATE: dict = {
     "findings": [],
     "kill_chain": [],
     "container_running": False,
+    "app_provisioned": False,
     "history": [],
 }
 

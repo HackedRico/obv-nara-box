@@ -242,6 +242,7 @@ def _handle_reset(session: dict) -> str:
         with ui.spinner("Resetting container..."):
             docker.reset()
         session["container_running"] = True
+        session["app_provisioned"] = False
         session["findings"] = []
         session["kill_chain"] = []
         ui.print_success("Container reset — fresh environment ready.")
