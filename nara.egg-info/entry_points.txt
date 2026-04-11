@@ -1,0 +1,2 @@
+[console_scripts]
+nara = nara.cli:main
