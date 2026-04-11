@@ -183,27 +183,59 @@ def _handle_pipeline(user_input: str, session: dict) -> str:
     """Run the full attack pipeline: scan → plan → exploit."""
     ui.console.print("\n[bold bright_magenta]═══ NARA PIPELINE ═══[/bold bright_magenta]\n")
 
+    # ── Extract target path/URL from input ───────────────────────────
+    words = user_input.split()
+    path = None
+    repo_url = None
+    for w in words:
+        if w.startswith("https://") or w.startswith("http://"):
+            repo_url = w
+            break
+        if os.path.exists(w):
+            path = os.path.abspath(w)
+            break
+
+    if repo_url:
+        path = _clone_repo(repo_url)
+        if not path:
+            return "Pipeline aborted — failed to clone repository."
+        session["target_repo"] = repo_url
+    if not path:
+        path = os.getcwd()
+        ui.print_info(f"No path specified — scanning current directory: {path}")
+
+    session["scan_path"] = path
+
     # ── Step 1: Scan ─────────────────────────────────────────────────
     ui.console.print("[bold bright_magenta][1/3][/bold bright_magenta] Scanning...")
-    scan_result = route(f"scan {user_input}", session)
-    ui.console.print(scan_result)
+    findings = scanner.run(path, session)
+    session["findings"] = findings
 
-    if not session["findings"]:
+    if not findings:
         return "Pipeline aborted — no findings from scan."
+    ui.print_info(f"Found {len(findings)} vulnerability/vulnerabilities.")
+    for f in findings:
+        ui.print_finding(f)
 
     # ── Step 2: Plan ─────────────────────────────────────────────────
     ui.console.print(f"\n[bold bright_magenta][2/3][/bold bright_magenta] Planning...")
-    plan_result = route("plan", session)
-    ui.console.print(plan_result)
+    chain = planner.run(findings, session)
+    session["kill_chain"] = chain
 
-    if not session["kill_chain"]:
+    if not chain:
         return "Pipeline aborted — planner returned no steps."
+    ui.print_kill_chain(chain)
 
     # ── Step 3: Exploit ──────────────────────────────────────────────
     ui.console.print(f"\n[bold bright_magenta][3/3][/bold bright_magenta] Exploiting...")
-    exploit_result = route("exploit", session)
+    if not session["container_running"]:
+        ui.print_info("Container not running — initializing...")
+        _handle_init(session)
+        if not session["container_running"]:
+            return "Pipeline aborted — container init failed."
 
-    return f"\n[Pipeline complete]\n{exploit_result}"
+    result = exploiter.run(chain, session)
+    return f"\n[Pipeline complete]\n{result}"
 
 
 # ------------------------------------------------------------------ #
