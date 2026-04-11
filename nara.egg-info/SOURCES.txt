@@ -14,10 +14,14 @@ nara/agents/__init__.py
 nara/agents/exploiter.py
 nara/agents/planner.py
 nara/agents/scanner.py
+nara/docker/Dockerfile
 nara/docker/__init__.py
 nara/docker/docker_manager.py
+nara/docker/start_vnc.sh
 nara/payloads/__init__.py
 nara/payloads/ransomware.py
+nara/payloads/assets/ransom_note_template.txt
+nara/payloads/assets/wallpaper.png
 nara/utils/__init__.py
 nara/utils/config.py
 nara/utils/llm_client.py
