@@ -132,8 +132,9 @@ This opens an interactive REPL. Available commands:
 
 | Command | What it does |
 |---|---|
+| `pipeline <path\|url>` | **Full auto:** scan → plan → exploit in one command |
 | `init` | Build image and start the Docker container |
-| `scan <path>` | Run Semgrep + Bandit, LLM triages results |
+| `scan <path\|url>` | Run Semgrep + Bandit, LLM triages results |
 | `plan` | Design a kill chain from scan findings |
 | `exploit` | Execute the kill chain against the container |
 | `status` | Show current findings, kill chain, and container state |
@@ -141,18 +142,23 @@ This opens an interactive REPL. Available commands:
 | `help` | Show available commands |
 | `exit` | End session |
 
+`scan` and `pipeline` accept a local path (`scan .`) or a GitHub URL (`scan https://github.com/user/repo`). URLs are cloned locally for SAST analysis.
+
 Or just type naturally — NARA understands plain English and falls back to conversational LLM responses.
 
 ### Typical flow
 
 ```
-nara > init                    # spin up the container
-nara > scan /path/to/code      # find vulnerabilities
-nara > plan                    # design the attack
-nara > exploit                 # execute it live
+# One command — full pipeline
+nara > pipeline https://github.com/aprameyak/exploitable-dummy-app
+
+# Or step by step
+nara > scan https://github.com/aprameyak/exploitable-dummy-app
+nara > plan
+nara > exploit
 ```
 
-After exploitation, connect to **VNC on port 5901** to see the ransomware desktop effects (wallpaper change, ransom note, "encrypted" files).
+During exploitation, a **noVNC viewer** opens automatically in your browser at `http://localhost:6080` so you can watch the ransomware desktop effects live (wallpaper change, ransom note, "encrypted" files).
 
 ---
 

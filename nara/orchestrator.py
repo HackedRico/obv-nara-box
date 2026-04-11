@@ -19,6 +19,7 @@ _docker = None  # DockerManager instance, lazy-loaded
 
 _HELP_TEXT = """[bold white]NARA — Available Commands[/bold white]
 
+  [bold bright_magenta]pipeline[/bold bright_magenta] [dim]<path|url>[/dim] Full auto: scan → plan → exploit (end to end)
   [bright_cyan]scan[/bright_cyan] [dim]<path|url>[/dim]   Scan a codebase for vulnerabilities
   [bright_yellow]plan[/bright_yellow]             Design a kill chain from scan findings
   [bright_red]exploit[/bright_red]          Execute the kill chain against the container
@@ -59,6 +60,8 @@ def _classify_intent(text: str) -> str:
     """Keyword-based intent classification. Returns intent label."""
     t = text.lower().strip()
 
+    if any(k in t for k in ["pipeline", "run all", "full attack", "autopwn", "auto pwn", "pwn", "nuke"]):
+        return "pipeline"
     if any(k in t for k in ["scan", "analyze", "analyse", "find vuln", "check for vuln", "audit"]):
         return "scan"
     if any(k in t for k in ["plan", "kill chain", "attack chain", "design attack", "what's the plan"]):
@@ -98,6 +101,9 @@ def route(user_input: str, session: dict) -> str:
 
     if intent == "exit":
         return "__EXIT__"
+
+    if intent == "pipeline":
+        return _handle_pipeline(user_input, session)
 
     if intent == "scan":
         # Extract path or URL from input
@@ -171,6 +177,33 @@ def route(user_input: str, session: dict) -> str:
 
     # Fallback: conversational LLM response
     return _chat_response(user_input, session)
+
+
+def _handle_pipeline(user_input: str, session: dict) -> str:
+    """Run the full attack pipeline: scan → plan → exploit."""
+    ui.console.print("\n[bold bright_magenta]═══ NARA PIPELINE ═══[/bold bright_magenta]\n")
+
+    # ── Step 1: Scan ─────────────────────────────────────────────────
+    ui.console.print("[bold bright_magenta][1/3][/bold bright_magenta] Scanning...")
+    scan_result = route(f"scan {user_input}", session)
+    ui.console.print(scan_result)
+
+    if not session["findings"]:
+        return "Pipeline aborted — no findings from scan."
+
+    # ── Step 2: Plan ─────────────────────────────────────────────────
+    ui.console.print(f"\n[bold bright_magenta][2/3][/bold bright_magenta] Planning...")
+    plan_result = route("plan", session)
+    ui.console.print(plan_result)
+
+    if not session["kill_chain"]:
+        return "Pipeline aborted — planner returned no steps."
+
+    # ── Step 3: Exploit ──────────────────────────────────────────────
+    ui.console.print(f"\n[bold bright_magenta][3/3][/bold bright_magenta] Exploiting...")
+    exploit_result = route("exploit", session)
+
+    return f"\n[Pipeline complete]\n{exploit_result}"
 
 
 # ------------------------------------------------------------------ #
