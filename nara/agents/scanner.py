@@ -55,30 +55,88 @@ def run(target_path: str, session: dict) -> list[dict]:
         ui.print_error("Both Semgrep and Bandit failed or produced no output. Cannot scan.")
         return []
 
+    # Condense raw SAST output so it fits in the LLM context window.
+    # Semgrep JSON can be huge; extract just the results array.
+    semgrep_condensed = _condense_semgrep(semgrep_out) if semgrep_out else "(no output — tool not available)"
+    bandit_condensed = _condense_bandit(bandit_out) if bandit_out else "(no output — tool not available)"
+
     ui.print_info("Sending findings to LLM for triage and deduplication...")
 
     llm = LLMClient()
     messages = [{
         "role": "user",
         "content": (
-            f"Semgrep output:\n{semgrep_out or '(no output — tool not available)'}\n\n"
-            f"Bandit output:\n{bandit_out or '(no output — tool not available)'}\n\n"
+            f"Semgrep results:\n{semgrep_condensed}\n\n"
+            f"Bandit results:\n{bandit_condensed}\n\n"
             f"Target path: {target_path}"
         )
     }]
 
+    raw = None
     try:
         with ui.spinner("LLM triaging findings..."):
             raw = llm.chat(messages, system=_SYSTEM_PROMPT, ollama_json=True)
         findings = parse_json_array_from_llm(raw)
     except (json.JSONDecodeError, RuntimeError) as e:
         ui.print_error(f"LLM triage failed: {e}")
+        # Show first 500 chars of raw response for debugging
+        if raw:
+            ui.print_info(f"Raw LLM response (first 500 chars): {raw[:500]}")
         ui.print_info("Falling back to raw tool output parsing.")
         findings = _parse_bandit_fallback(bandit_out)
 
     session["findings"] = findings
     ui.print_info(f"Scanner complete — {len(findings)} finding(s).")
     return findings
+
+
+# ------------------------------------------------------------------ #
+# SAST output condensers                                                #
+# ------------------------------------------------------------------ #
+
+_MAX_RESULTS = 20  # Cap findings sent to LLM to keep context small
+
+
+def _condense_semgrep(raw: str) -> str:
+    """Extract just the results from Semgrep JSON, trimmed for LLM context."""
+    try:
+        data = json.loads(raw)
+        results = data.get("results", [])[:_MAX_RESULTS]
+        condensed = []
+        for r in results:
+            condensed.append({
+                "check_id": r.get("check_id", ""),
+                "path": r.get("path", ""),
+                "start_line": r.get("start", {}).get("line", 0),
+                "message": r.get("extra", {}).get("message", "")[:200],
+                "severity": r.get("extra", {}).get("severity", ""),
+                "lines": r.get("extra", {}).get("lines", "")[:200],
+            })
+        return json.dumps(condensed, indent=2) if condensed else "(no results)"
+    except (json.JSONDecodeError, KeyError):
+        # Can't parse — send truncated raw text
+        return raw[:4000]
+
+
+def _condense_bandit(raw: str) -> str:
+    """Extract just the results from Bandit JSON, trimmed for LLM context."""
+    try:
+        data = json.loads(raw)
+        results = data.get("results", [])[:_MAX_RESULTS]
+        condensed = []
+        for r in results:
+            condensed.append({
+                "test_name": r.get("test_name", ""),
+                "filename": r.get("filename", ""),
+                "line_number": r.get("line_number", 0),
+                "issue_text": r.get("issue_text", "")[:200],
+                "issue_severity": r.get("issue_severity", ""),
+                "issue_confidence": r.get("issue_confidence", ""),
+                "code": r.get("code", "")[:200],
+            })
+        return json.dumps(condensed, indent=2) if condensed else "(no results)"
+    except (json.JSONDecodeError, KeyError):
+        return raw[:4000]
 
 
 # ------------------------------------------------------------------ #
