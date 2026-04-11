@@ -6,16 +6,20 @@ Interface (contractual):
 """
 
 import os
+import subprocess
+from pathlib import Path
 from nara.utils.llm_client import LLMClient
 from nara.utils import terminal_ui as ui
 from nara.agents import scanner, planner, exploiter
+
+TARGETS_DIR = Path.cwd() / "nara_targets"
 
 _llm: LLMClient | None = None
 _docker = None  # DockerManager instance, lazy-loaded
 
 _HELP_TEXT = """[bold white]NARA — Available Commands[/bold white]
 
-  [bright_cyan]scan[/bright_cyan] [dim]<path>[/dim]      Scan a codebase for vulnerabilities
+  [bright_cyan]scan[/bright_cyan] [dim]<path|url>[/dim]   Scan a codebase for vulnerabilities
   [bright_yellow]plan[/bright_yellow]             Design a kill chain from scan findings
   [bright_red]exploit[/bright_red]          Execute the kill chain against the container
   [white]init[/white]             Provision the Docker container
@@ -96,17 +100,30 @@ def route(user_input: str, session: dict) -> str:
         return "__EXIT__"
 
     if intent == "scan":
-        # Extract path from input if provided, else default to cwd
+        # Extract path or URL from input
         words = user_input.split()
         path = None
+        repo_url = None
+
         for w in words:
+            if w.startswith("https://") or w.startswith("http://"):
+                repo_url = w
+                break
             if os.path.exists(w):
                 path = os.path.abspath(w)
                 break
+
+        if repo_url:
+            path = _clone_repo(repo_url)
+            if not path:
+                return "Failed to clone repository. Check the URL and try again."
+            session["target_repo"] = repo_url
+
         if not path:
             path = os.getcwd()
             ui.print_info(f"No path specified — scanning current directory: {path}")
 
+        session["scan_path"] = path
         findings = scanner.run(path, session)
         session["findings"] = findings
 
@@ -159,6 +176,41 @@ def route(user_input: str, session: dict) -> str:
 # ------------------------------------------------------------------ #
 # Private helpers                                                      #
 # ------------------------------------------------------------------ #
+
+def _clone_repo(url: str) -> str | None:
+    """Clone a git repo URL into nara_targets/ and return the local path."""
+    import re
+    # Normalize GitHub browser URLs to clone URLs
+    # e.g. https://github.com/user/repo/tree/main → https://github.com/user/repo
+    url = re.sub(r"/(tree|blob)/[^/].*$", "", url.rstrip("/"))
+
+    # Derive repo name from URL (strip trailing .git)
+    repo_name = url.rstrip("/").split("/")[-1].removesuffix(".git")
+    dest = TARGETS_DIR / repo_name
+
+    if dest.exists():
+        ui.print_info(f"Repository already cloned at {dest} — reusing.")
+        return str(dest)
+
+    ui.print_info(f"Cloning {url} ...")
+    TARGETS_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        result = subprocess.run(
+            ["git", "clone", "--depth", "1", url, str(dest)],
+            capture_output=True, text=True, timeout=120,
+        )
+        if result.returncode != 0:
+            ui.print_error(f"git clone failed: {result.stderr.strip()}")
+            return None
+        ui.print_success(f"Cloned to {dest}")
+        return str(dest)
+    except subprocess.TimeoutExpired:
+        ui.print_error("git clone timed out after 120s.")
+        return None
+    except Exception as e:
+        ui.print_error(f"git clone error: {e}")
+        return None
+
 
 def _handle_init(session: dict) -> str:
     docker = _get_docker()
