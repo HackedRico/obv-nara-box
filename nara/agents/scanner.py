@@ -126,7 +126,8 @@ def _condense_bandit(raw: str) -> str:
         condensed = []
         for r in results:
             condensed.append({
-                "test_id": r.get("test_name", ""),
+                "test_id": r.get("test_id", ""),
+                "test_name": r.get("test_name", ""),
                 "file": r.get("filename", ""),
                 "line": r.get("line_number", 0),
                 "issue": r.get("issue_text", "")[:200],

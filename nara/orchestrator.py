@@ -19,7 +19,7 @@ _docker = None  # DockerManager instance, lazy-loaded
 
 _HELP_TEXT = """[bold white]NARA — Available Commands[/bold white]
 
-  [bright_cyan]scan[/bright_cyan] [dim]<path>[/dim]      Scan a codebase for vulnerabilities
+  [bright_cyan]scan[/bright_cyan] [dim]<path|url>[/dim]   Scan a codebase for vulnerabilities
   [bright_yellow]plan[/bright_yellow]             Design a kill chain from scan findings
   [bright_red]exploit[/bright_red]          Execute the kill chain against the container
   [white]init[/white]             Provision the Docker container
