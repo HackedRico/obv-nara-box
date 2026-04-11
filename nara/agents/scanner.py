@@ -6,6 +6,7 @@ deduplicate and prioritize findings into a structured list.
 """
 
 import json
+import os
 import subprocess
 import sys
 from nara.utils.llm_client import LLMClient
@@ -83,14 +84,20 @@ def run(target_path: str, session: dict) -> list[dict]:
 # Tool runners                                                         #
 # ------------------------------------------------------------------ #
 
+_EXCLUDE_DIRS = [".venv", "venv", "__pycache__", ".git", "node_modules", ".egg-info"]
+
+
 def _run_semgrep(target_path: str) -> str:
     """Run semgrep and return raw JSON output string, or empty string on failure."""
     try:
-        result = subprocess.run(
-            ["semgrep", "--config", "auto", target_path, "--json",
-             "--no-rewrite-rule-ids", "--quiet"],
-            capture_output=True, text=True, timeout=120
-        )
+        cmd = [
+            "semgrep", "--config", "auto", target_path, "--json",
+            "--no-rewrite-rule-ids", "--quiet",
+        ]
+        for d in _EXCLUDE_DIRS:
+            cmd.extend(["--exclude", d])
+        ui.print_info("Running Semgrep...")
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         return result.stdout or ""
     except FileNotFoundError:
         ui.print_info("Semgrep not found — skipping. Install: pip install semgrep")
@@ -106,8 +113,12 @@ def _run_semgrep(target_path: str) -> str:
 def _run_bandit(target_path: str) -> str:
     """Run bandit and return raw JSON output string, or empty string on failure."""
     try:
+        exclude = ",".join(
+            os.path.join(target_path, d) for d in _EXCLUDE_DIRS
+        )
+        ui.print_info("Running Bandit...")
         result = subprocess.run(
-            ["bandit", "-r", target_path, "-f", "json", "-q"],
+            ["bandit", "-r", target_path, "-f", "json", "-q", "--exclude", exclude],
             capture_output=True, text=True, timeout=60
         )
         # Bandit exits non-zero when it finds issues — that's normal
