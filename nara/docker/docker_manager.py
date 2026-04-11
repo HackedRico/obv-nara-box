@@ -10,6 +10,7 @@ Interface (contractual — used by orchestrator and exploiter):
     manager.is_running()         -> bool   (health check)
 """
 
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -79,6 +80,24 @@ class DockerManager:
             ["docker", "cp", host_path, f"{CONTAINER_NAME}:{container_path}"],
             check=True,
         )
+
+    def write_to_container_file(self, path: str, text: str) -> None:
+        """Overwrite a file inside the container with UTF-8 text."""
+        proc = subprocess.Popen(
+            [
+                "docker",
+                "exec",
+                "-i",
+                CONTAINER_NAME,
+                "bash",
+                "-c",
+                f"cat > {shlex.quote(path)}",
+            ],
+            stdin=subprocess.PIPE,
+        )
+        proc.communicate(text.encode("utf-8", errors="replace"), timeout=120)
+        if proc.wait() != 0:
+            raise RuntimeError(f"write_to_container_file failed for {path}")
 
     def append_to_container_file(self, path: str, text: str) -> None:
         """Append UTF-8 text to a file inside the container (safe for arbitrary bytes as text)."""

