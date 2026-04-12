@@ -2,7 +2,7 @@
 
 An AI-powered penetration testing CLI that orchestrates three agents to scan codebases, plan attack chains, and execute exploits against an isolated Docker container — streaming the entire kill chain live to the terminal.
 
-Built for **Bitcamp 2026** (Cybersecurity Track + Neelbauer Agent Revolution Award).
+Built for **Bitcamp 2026** (Cybersecurity Track).
 
 > Security tools tell you *what* is vulnerable. NARA shows you *what happens when it gets exploited* — autonomously, in real time, end to end.
 
@@ -239,3 +239,8 @@ This tool is built for **educational and authorized security research only**.
 ## Team
 
 Built at Bitcamp 2026, University of Maryland.
+
+- [Ricky Chen](https://github.com/HackedRico)
+- [Aprameya Kannan](https://github.com/aprameyak)
+- [Ayush Mishra](https://github.com/AyushMishra21)
+- [Israel Ogwu](https://github.com/israelo19)
