@@ -58,24 +58,32 @@ def _get_docker():
 
 
 def _classify_intent(text: str) -> str:
-    """Keyword-based intent classification. Returns intent label."""
-    t = text.lower().strip()
+    """Keyword-based intent classification. Returns intent label.
 
-    if any(k in t for k in ["pipeline", "run all", "full attack", "autopwn", "auto pwn", "pwn", "nuke"]):
+    Single-word commands (scan, plan, exploit, etc.) only match when they
+    appear as the FIRST word so that conversational sentences like
+    "tell me about the exploit path" fall through to chat.
+    Multi-word phrases can match anywhere.
+    """
+    t = text.lower().strip()
+    first = t.split()[0] if t else ""
+
+    # ── Commands that trigger actions (first-word match) ─────────────
+    if first in ("pipeline", "pwn", "autopwn", "nuke") or any(k in t for k in ["run all", "full attack", "auto pwn"]):
         return "pipeline"
-    if any(k in t for k in ["scan", "analyze", "analyse", "find vuln", "check for vuln", "audit"]):
+    if first in ("scan", "analyze", "analyse", "audit") or any(k in t for k in ["find vuln", "check for vuln"]):
         return "scan"
-    if any(k in t for k in ["plan", "kill chain", "attack chain", "design attack", "what's the plan"]):
+    if first == "plan" or any(k in t for k in ["design attack"]):
         return "plan"
-    if any(k in t for k in ["exploit", "attack", "run the chain", "go for it", "execute", "fire"]):
+    if first in ("exploit", "fire") or any(k in t for k in ["run the chain", "go for it"]):
         return "exploit"
-    if any(k in t for k in ["init", "start container", "provision", "set up env", "setup env"]):
+    if first in ("init", "provision") or any(k in t for k in ["start container", "set up env", "setup env"]):
         return "init"
-    if any(k in t for k in ["reset", "restart", "fresh", "clean slate", "tear down"]):
+    if first == "reset" or any(k in t for k in ["restart", "clean slate", "tear down"]):
         return "reset"
-    if any(k in t for k in ["report", "pentest report", "exploitation report", "show report"]):
+    if first == "report" or any(k in t for k in ["pentest report", "exploitation report", "show report"]):
         return "report"
-    if any(k in t for k in ["status", "what did you find", "show findings", "what have you found", "findings"]):
+    if first in ("status", "findings") or any(k in t for k in ["what did you find", "show findings", "what have you found"]):
         return "status"
     if t in ("help", "?", "commands", "what can you do"):
         return "help"
