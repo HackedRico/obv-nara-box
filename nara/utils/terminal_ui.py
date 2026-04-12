@@ -10,6 +10,7 @@ Interface (contractual — do not change signatures):
     print_kill_chain(steps: list[dict]) -> None
 """
 
+import random
 import time
 from contextlib import contextmanager
 from rich.console import Console
@@ -169,3 +170,71 @@ def print_success(msg: str) -> None:
 def print_info(msg: str) -> None:
     """Print a plain info line."""
     console.print(f"[dim cyan]→[/dim cyan] {msg}")
+
+
+# ------------------------------------------------------------------ #
+# Dramatic hacker-aesthetic effects                                    #
+# ------------------------------------------------------------------ #
+
+def print_exploit_start(target: str = "localhost:8080", steps: int = 0) -> None:
+    """Print a dramatic attack initiation sequence before the kill chain fires."""
+    console.print()
+    console.print("  [bold bright_red]>> ATTACK SEQUENCE INITIATED[/bold bright_red]")
+    time.sleep(0.15)
+    console.print(f"  [dim red]   Target locked  : {target}[/dim red]")
+    time.sleep(0.06)
+    console.print(f"  [dim red]   Kill chain     : {steps} steps loaded[/dim red]")
+    time.sleep(0.06)
+    console.print("  [dim red]   Exploit mode   : AUTONOMOUS[/dim red]")
+    time.sleep(0.06)
+    console.print("  [bold bright_red]>> ENGAGING[/bold bright_red]")
+    time.sleep(0.15)
+    console.print()
+
+
+def print_system_compromised() -> None:
+    """Dramatic terminal takeover when ransomware deploys — hex dump, PWNED banner, panel."""
+    console.print()
+
+    # ── Rapid hex dump scroll — looks like data exfiltration ──────────
+    for _ in range(12):
+        addr = random.randint(0x400000, 0x7FFFFF)
+        hex_bytes = " ".join(f"{random.randint(0, 255):02x}" for _ in range(16))
+        ascii_repr = "".join(
+            chr(random.randint(33, 126)) if random.random() > 0.3 else "."
+            for _ in range(16)
+        )
+        console.print(
+            f"  [dim red]0x{addr:06x}[/dim red]  "
+            f"[red]{hex_bytes}[/red]  "
+            f"[dim]|{ascii_repr}|[/dim]"
+        )
+        time.sleep(0.03)
+
+    console.print()
+
+    # ── PWNED ASCII banner — line-by-line reveal ─────────────────────
+    _PWNED = (
+        "  ██████╗ ██╗    ██╗███╗   ██╗███████╗██████╗ \n"
+        "  ██╔══██╗██║    ██║████╗  ██║██╔════╝██╔══██╗\n"
+        "  ██████╔╝██║ █╗ ██║██╔██╗ ██║█████╗  ██║  ██║\n"
+        "  ██╔═══╝ ██║███╗██║██║╚██╗██║██╔══╝  ██║  ██║\n"
+        "  ██║     ╚███╔███╔╝██║ ╚████║███████╗██████╔╝\n"
+        "  ╚═╝      ╚══╝╚══╝ ╚═╝  ╚═══╝╚══════╝╚═════╝ "
+    )
+    for line in _PWNED.splitlines():
+        console.print(f"[bold bright_red]{line}[/bold bright_red]")
+        time.sleep(0.04)
+
+    console.print()
+    console.print(Panel(
+        "[bold bright_red]RANSOMWARE DEPLOYED — ALL FILES ENCRYPTED[/bold bright_red]\n\n"
+        "[white]Desktop hijacked.  Wallpaper replaced.  Shortcuts locked.[/white]\n"
+        "[dim]Security research demonstration — run 'reset' to restore.[/dim]",
+        border_style="bright_red",
+        title="[bold bright_red][ NARA RANSOMWARE ][/bold bright_red]",
+        title_align="center",
+        expand=True,
+        padding=(1, 4),
+    ))
+    console.print()
