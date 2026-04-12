@@ -35,30 +35,72 @@ _ICON_MAIL = os.path.join(_ICON_DIR, "rocket_mail.png")
 # ------------------------------------------------------------------ #
 
 DEFAULT_NOTE = """
-╔══════════════════════════════════════════════════════════════════╗
-║                  YOUR SYSTEM HAS BEEN COMPROMISED                ║
-║                                                                  ║
-║  NARA has autonomously discovered and exploited vulnerabilities  ║
-║  in this system. In a real attack, your data would be gone.      ║
-║                                                                  ║
-║  VULNERABILITIES EXPLOITED:                                      ║
-║  → Command Injection via /api/pokemon endpoint                   ║
-║    (user input passed directly to os.system() — no sanitization) ║
-║  → Unrestricted file upload                                      ║
-║  → Remote code execution                                         ║
-║                                                                  ║
-║  WHAT HAPPENED:                                                  ║
-║  1. NARA scanned your codebase with Semgrep + Bandit             ║
-║  2. AI planner designed this kill chain autonomously             ║
-║  3. Exploiter gained shell access via command injection          ║
-║  4. This payload was uploaded and executed                       ║
-║                                                                  ║
-║  This is a SECURITY RESEARCH DEMONSTRATION.                      ║
-║  No real files were harmed. Reset with: nara > reset             ║
-║                                                                  ║
-║  ──────────────────────────────────────────────────────────────  ║
-║  NARA — Autonomous Red Team Platform  |  Bitcamp 2026            ║
-╚══════════════════════════════════════════════════════════════════╝
+ ██████████████████████████████████████████████████████████████████████
+ █                                                                    █
+ █   ███╗   ██╗ █████╗ ██████╗  █████╗                               █
+ █   ████╗  ██║██╔══██╗██╔══██╗██╔══██╗                              █
+ █   ██╔██╗ ██║███████║██████╔╝███████║                              █
+ █   ██║╚██╗██║██╔══██║██╔══██╗██╔══██║                              █
+ █   ██║ ╚████║██║  ██║██║  ██║██║  ██║                              █
+ █   ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝                              █
+ █                                                                    █
+ █▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓█
+ █                                                                    █
+ █   ALL YOUR FILES HAVE BEEN ENCRYPTED.                              █
+ █                                                                    █
+ █   Your documents, databases, application source code, and          █
+ █   credentials have been encrypted with AES-256-CBC.                █
+ █   Without the private decryption key, recovery is impossible.      █
+ █                                                                    █
+ █▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓█
+ █                                                                    █
+ █   WHAT HAPPENED:                                                   █
+ █                                                                    █
+ █     An autonomous AI agent identified and exploited critical       █
+ █     vulnerabilities in your web application without any human      █
+ █     involvement:                                                   █
+ █                                                                    █
+ █     [1] Scanned source code — found command injection, SQLi, XSS  █
+ █     [2] Designed a multi-stage kill chain autonomously             █
+ █     [3] Exploited OS command injection → gained root shell         █
+ █     [4] Exfiltrated /etc/passwd, credentials, database dumps      █
+ █     [5] Deployed this ransomware payload across the filesystem     █
+ █                                                                    █
+ █▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓█
+ █                                                                    █
+ █   ENCRYPTED FILES:                                                 █
+ █                                                                    █
+ █     ~/Desktop/*.NARA_ENCRYPTED                                     █
+ █     ~/Documents/*.NARA_ENCRYPTED                                   █
+ █     ~/Downloads/*.NARA_ENCRYPTED                                   █
+ █     /opt/pokedex/*.NARA_ENCRYPTED                                  █
+ █                                                                    █
+ █   EXFILTRATED DATA:                                                █
+ █                                                                    █
+ █     /tmp/nara_exfil/exfil_manifest.log                             █
+ █     /tmp/nara_exfil/stolen_credentials.txt                         █
+ █                                                                    █
+ █▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓█
+ █                                                                    █
+ █   TO RECOVER YOUR FILES:                                           █
+ █                                                                    █
+ █     Send 5 BTC to the following wallet:                            █
+ █     bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh                   █
+ █                                                                    █
+ █     Then email proof of payment to:                                █
+ █     nara-decrypt@proton.me                                         █
+ █                                                                    █
+ █     ⚠  You have 72 hours. After that, the key is destroyed.       █
+ █     ⚠  Do not attempt to restore files manually.                  █
+ █     ⚠  Do not contact law enforcement.                            █
+ █     ⚠  Every hour of delay, 100 files are permanently deleted.    █
+ █                                                                    █
+ █▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓█
+ █                                                                    █
+ █   NARA Autonomous Red Team Agent  //  ID: PWNEDDDDDDDDDDDDD        █
+ █   "No human was involved."                                         █
+ █                                                                    █
+ ██████████████████████████████████████████████████████████████████████
 """
 
 WALLPAPER_PATH = "/tmp/nara_ransom_wallpaper.jpg"
@@ -667,19 +709,32 @@ def _write_banner_script() -> str:
         'echo -e "\\033[1;31m"\n'
         "cat << 'BANNER'\n"
         "\n"
-        "  ╔═══════════════════════════════════════════════════════════╗\n"
-        "  ║                                                           ║\n"
-        "  ║   ███╗   ██╗ █████╗ ██████╗  █████╗                      ║\n"
-        "  ║   ████╗  ██║██╔══██╗██╔══██╗██╔══██╗                     ║\n"
-        "  ║   ██╔██╗ ██║███████║██████╔╝███████║                     ║\n"
-        "  ║   ██║╚██╗██║██╔══██║██╔══██╗██╔══██║                     ║\n"
-        "  ║   ██║ ╚████║██║  ██║██║  ██║██║  ██║                     ║\n"
-        "  ║   ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝                     ║\n"
-        "  ║                                                           ║\n"
-        "  ║         YOUR SYSTEM HAS BEEN COMPROMISED                  ║\n"
-        "  ║         ALL FILES HAVE BEEN ENCRYPTED                     ║\n"
-        "  ║                                                           ║\n"
-        "  ╚═══════════════════════════════════════════════════════════╝\n"
+        "  ██████████████████████████████████████████████████████████████\n"
+        "  █                                                            █\n"
+        "  █   ███╗   ██╗ █████╗ ██████╗  █████╗                       █\n"
+        "  █   ████╗  ██║██╔══██╗██╔══██╗██╔══██╗                      █\n"
+        "  █   ██╔██╗ ██║███████║██████╔╝███████║                      █\n"
+        "  █   ██║╚██╗██║██╔══██║██╔══██╗██╔══██║                      █\n"
+        "  █   ██║ ╚████║██║  ██║██║  ██║██║  ██║                      █\n"
+        "  █   ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝                      █\n"
+        "  █                                                            █\n"
+        "  █▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓█\n"
+        "  █                                                            █\n"
+        "  █   ALL YOUR FILES HAVE BEEN ENCRYPTED.                      █\n"
+        "  █                                                            █\n"
+        "  █   An autonomous AI agent compromised this system.          █\n"
+        "  █   No human was involved.                                   █\n"
+        "  █                                                            █\n"
+        "  █   Send 5 BTC to:                                           █\n"
+        "  █   bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh              █\n"
+        "  █                                                            █\n"
+        "  █   You have 72 hours. Then the key is destroyed.            █\n"
+        "  █                                                            █\n"
+        "  █▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓█\n"
+        "  █                                                            █\n"
+        "  █   NARA Autonomous Red Team  //  ID: PWNEDDDDDDDDDDDDD      █\n"
+        "  █                                                            █\n"
+        "  ██████████████████████████████████████████████████████████████\n"
         "\n"
         "BANNER\n"
         'echo -e "\\033[0m"\n'
@@ -706,37 +761,48 @@ def show_ransom_popups(count: int = 25):
     # Rotating scary messages — each popup gets a different one
     _SCARY_MSGS = [
         (
-            "⚠ CRITICAL: ALL FILES ENCRYPTED ⚠\n\n"
-            "Your documents, databases, and credentials\n"
-            "have been seized by NARA.\n\n"
-            "There is no recovery without the decryption key."
+            "CRITICAL: ALL FILES ENCRYPTED\n\n"
+            "AES-256-CBC  //  Key held remotely\n"
+            "*.NARA_ENCRYPTED across all directories\n\n"
+            "Recovery without the decryption key\n"
+            "is mathematically impossible.\n\n"
+            "5 BTC  //  72 hours  //  No exceptions"
         ),
         (
-            "☠ SYSTEM BREACH DETECTED ☠\n\n"
-            "Root access obtained.\n"
-            "Keylogger installed. Credentials harvested.\n"
-            "All outbound traffic is being monitored."
+            "SYSTEM BREACH — ROOT ACCESS\n\n"
+            "uid=0(root) obtained via command injection\n"
+            "/etc/passwd — exfiltrated\n"
+            "/etc/shadow — exfiltrated\n"
+            "Application database — dumped\n\n"
+            "Keylogger active. All input is captured."
         ),
         (
-            "🔒 DATA EXFILTRATION COMPLETE 🔒\n\n"
-            "financial_report_Q4.xlsx — CAPTURED\n"
-            "employee_records.csv — CAPTURED\n"
-            "database_backup.sql — CAPTURED\n"
-            "api_keys.txt — CAPTURED"
+            "DATA EXFILTRATION COMPLETE\n\n"
+            "financial_report_Q4.xlsx     UPLOADED\n"
+            "employee_records.csv         UPLOADED\n"
+            "database_backup.sql          UPLOADED\n"
+            "api_keys.txt                 UPLOADED\n"
+            "credentials.json             UPLOADED\n\n"
+            "Destination: nara-c2.onion:4443"
         ),
         (
-            "⛔ RANSOMWARE DEPLOYED ⛔\n\n"
-            "Every file on this system has been\n"
-            "encrypted with military-grade AES-256.\n\n"
-            "Pay 5 BTC to recover your data.\n"
-            "You have 72 hours."
+            "RANSOMWARE DEPLOYED — NARA v2.0\n\n"
+            "Encryption:  AES-256-CBC\n"
+            "Files hit:   ALL\n"
+            "Time left:   71:59:48\n"
+            "Wallet:      bc1qxy2kgdygjrsqt...\n\n"
+            "Every hour of delay = 100 files\n"
+            "permanently destroyed."
         ),
         (
-            "💀 NARA AUTONOMOUS AGENT 💀\n\n"
+            "NARA AUTONOMOUS RED TEAM AGENT\n\n"
+            "I scanned your source code.\n"
             "I found your vulnerabilities.\n"
-            "I wrote my own exploits.\n"
-            "I owned your system.\n\n"
-            "No human was involved."
+            "I wrote the exploits.\n"
+            "I deployed the payload.\n"
+            "I encrypted your files.\n\n"
+            "No human was involved.\n"
+            "ID: PWNEDDDDDDDDDDDDD"
         ),
     ]
 
