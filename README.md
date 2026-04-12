@@ -2,7 +2,7 @@
 
 [![DevPost](https://img.shields.io/badge/DevPost-NARA-003E54?style=for-the-badge&logo=devpost&logoColor=white)](https://devpost.com/software/nara-autonomous-red-teaming-agent#updates)
 
-An AI-powered penetration testing CLI that orchestrates three agents to scan codebases, plan attack chains, and execute exploits against an isolated Docker container — streaming the entire kill chain live to the terminal.
+An AI-powered penetration testing CLI that orchestrates three agents to scan codebases, plan attack chains, and execute exploits against an isolated Docker container — with live observability into the exploitation of your codebase through noVNC desktop streaming and real-time terminal output.
 
 Built for **Bitcamp 2026** (Cybersecurity Track).
 
