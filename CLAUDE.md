@@ -21,6 +21,10 @@ SAST tools (used by the Scanner agent): `pip install semgrep bandit`
 
 There are no tests or linting configured.
 
+## Known placeholder before running
+
+`VULN_APP_REPO` in `nara/agents/exploiter.py:22` is still `"https://github.com/PLACEHOLDER/pokedex-vuln"` — update it to the real vulnerable Flask app repo URL before running the exploit pipeline. The provisioning logic at `exploiter._provision()` will use `session["target_repo"]` if set by a prior scan, falling back to this constant.
+
 ## LLM Backend
 
 Three backends, switched via `LLM_BACKEND` in `.env` — no code changes needed. **Default:** `featherless` with `microsoft/Phi-4-mini-instruct` (see [featherless.ai/models](https://featherless.ai/models)).
@@ -31,7 +35,9 @@ Three backends, switched via `LLM_BACKEND` in `.env` — no code changes needed.
 | `ollama` | `OLLAMA_MODEL=qwen2.5-coder:7b-instruct` | Local dev (free) |
 | `claude` | `ANTHROPIC_API_KEY=...` | Anthropic API |
 
-`nara/utils/llm_client.py` abstracts all three behind `LLMClient.chat(messages, system)`. All agents use this single interface.
+`nara/utils/llm_client.py` abstracts all three behind `LLMClient.chat(messages, system)`. All agents use this single interface. Config is loaded from the nearest `.env` walking up from `config.py` or `cwd` — see `nara/utils/config.py`.
+
+There is also `nara/utils/terpai_client.py` — a standalone `TerpAIClient` wrapping the UMD TerpAI (NebulaOne) SSE API with Playwright-based browser auth and JWT caching. It is **not wired into `LLMClient`** yet; it can be integrated as a fourth backend if needed.
 
 ## Architecture
 
@@ -53,16 +59,22 @@ Intent classification is keyword-based in `orchestrator._classify_intent()`. Whe
 
 `cli.py` creates a session dict (`findings`, `kill_chain`, `container_running`, `app_provisioned`, `history`, and optionally `scan_path` / `target_repo`) passed to every `orchestrator.route()` call. Agents mutate it directly.
 
+### LLM JSON parsing
+
+All agents rely on `nara/utils/llm_json.parse_json_array_from_llm()` rather than bare `json.loads()`. It handles: BOM stripping, `<think>` / reasoning block removal (Qwen/DeepSeek), markdown fence removal, and unwrapping objects that contain an array under common keys (`findings`, `steps`, `kill_chain`, etc.). Use this utility for any new agent that needs to parse LLM-returned JSON.
+
 ### Agent contracts
 
 All three agents in `nara/agents/` follow the same pattern:
 - LLM system prompts demand **raw JSON only** (no markdown) — arrays of dicts with specific keys
-- `_parse_json_list()` strips markdown fences then `json.loads()`
+- JSON is parsed via `parse_json_array_from_llm()` from `nara/utils/llm_json.py`
 - Each agent has a hardcoded fallback if LLM output fails to parse
 
-**Scanner** output keys: `type, file, line, severity, description, exploitability`
-**Planner** output keys: `step, command, expected_outcome, vuln_type, mitre_tactic`
+**Scanner** output keys: `type, file, line, severity, description, exploitability`  
+**Planner** output keys: `step, command, expected_outcome, vuln_type, mitre_tactic`  
 **Planner always appends ransomware deployment as the final step** if the LLM doesn't include it.
+
+Scanner findings are normalized through `_normalize_finding()` (maps ~30 alternative key names LLMs commonly emit) and deduplicated by `(file, line)` before being returned.
 
 ### Exploiter adaptive loop
 
@@ -71,23 +83,21 @@ For each kill chain step, the Exploiter:
 2. Sends output to LLM for assessment → returns `{success, reason, next_action}`
 3. `next_action` can be `continue`, `retry` (same command), `adapt` (LLM rewrites command), or `abort`
 
+Steps whose name or command contains `"ransomware"` are routed to `_deploy_ransomware()` instead of normal execution. That function copies `nara/payloads/ransomware.py` into the container and runs it with `DISPLAY=:1`.
+
 ### Docker integration
 
-`nara/docker/docker_manager.py` is fully implemented and shells out to the `docker` CLI. The container image (`nara-target`) is pre-baked with Firefox + an XFCE/VNC desktop so the Exploiter can drive the browser live. Key methods beyond the base contract:
+`nara/docker/docker_manager.py` shells out to the `docker` CLI. The container image (`nara-target`) is pre-baked with Firefox + an XFCE/VNC desktop so the Exploiter can drive the browser live. Key methods:
 
 - `exec(cmd) -> str` — run a command, capture combined stdout+stderr, 120s timeout
 - `exec_detached(cmd)` — fire-and-forget (used to launch the tail-follow terminal, Firefox, etc.)
 - `copy_to_container(host_path, container_path)` — `docker cp` wrapper
 - `write_to_container_file(path, text)` / `append_to_container_file(path, text)` — pipe UTF-8 into the container via `bash -c 'cat > …'` / `tee -a`
 
-The Exploiter still has a **DRY RUN fallback**: if DockerManager can't be imported or a step's `_exec` returns None, commands are printed rather than executed. The Dockerfile path is resolved relative to `docker_manager.py` so the package works both editable-installed and from a site-packages copy.
+`IMAGE_NAME = "nara-target"` and `CONTAINER_NAME = "nara-container"` are module constants — rename both if the image/container names change.
 
-`DOCKERFILE_DIR`, `IMAGE_NAME = "nara-target"`, and `CONTAINER_NAME = "nara-container"` are module constants — if you rename the image/container you must change both places.
-
-### Vulnerable app target
-
-The Exploiter clones a separate vulnerable-app repo into the container at runtime. The real target lives at `https://github.com/aprameyak/exploitable-dummy-app` (per README), but the `VULN_APP_REPO` constant at the top of `nara/agents/exploiter.py` is still a `PLACEHOLDER` — update that constant before running against the real target. Primary exploit path: command injection on `GET /api/pokemon?name=<input>`.
+The Exploiter has a **DRY RUN fallback**: if DockerManager can't be imported or `_exec` returns None, commands are printed rather than executed. All VNC log writes (`_append_vnc_log`) and browser launch (`_launch_vnc_browser`) are no-ops in DRY RUN mode.
 
 ### Ransomware payload
 
-`nara/payloads/ransomware.py` is **self-contained stdlib-only Python** designed to run inside the container. It creates dummy files then "encrypts" them (renames to `.NARA_ENCRYPTED`), drops a ransom note, generates a dark-red PNG wallpaper from scratch using struct+zlib, and attempts to set it via `xfconf-query` or `feh`.
+`nara/payloads/ransomware.py` is **self-contained stdlib-only Python** designed to run inside the container. It creates dummy files then "encrypts" them (renames to `.NARA_ENCRYPTED`), drops a ransom note, generates a dark-red PNG wallpaper from scratch using struct+zlib, and attempts to set it via `xfconf-query` or `feh`. An optional `team_rocket_wallpaper.jpg` asset in `nara/payloads/assets/` is copied to the container first if it exists.
