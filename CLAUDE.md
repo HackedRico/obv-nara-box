@@ -50,10 +50,14 @@ User input → cli.py (REPL) → orchestrator.route() → keyword intent classif
   ├─ "plan"     → planner.run(findings, session) → LLM kill chain design → step list
   ├─ "exploit"  → exploiter.run(kill_chain, session) → docker exec → LLM step assessment
   ├─ "init" / "reset" / "status" / "help" / "exit" → DockerManager + session plumbing
-  └─ chat       → LLM conversational fallback
+  └─ chat       → LLM conversational fallback (session-aware)
 ```
 
 Intent classification is keyword-based in `orchestrator._classify_intent()`. When the user passes a URL or path argument to `scan`/`pipeline`, `_clone_repo()` shallow-clones it into `./nara_targets/<repo>/` (normalizing GitHub `/tree/`, `/blob/` URLs) and scans the local copy.
+
+### NLP / Conversational mode
+
+Any input that doesn't match a keyword intent falls through to `_chat_response()`, which calls the LLM with full session context injected via `_build_session_context()`. The system prompt receives the complete findings list (type, file, line, severity, description, exploitability), the full kill chain (steps, commands, MITRE tactics), and exploitation results (step name + success/fail status). This lets the user ask follow-up questions like "what MITRE tactics were used" or "explain the exploit path" and get answers grounded in the actual session data.
 
 ### Session state
 

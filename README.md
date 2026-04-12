@@ -147,7 +147,15 @@ This opens an interactive REPL. Available commands:
 
 `scan` and `pipeline` accept a local path (`scan .`) or a GitHub URL (`scan https://github.com/user/repo`). URLs are shallow-cloned locally for SAST analysis.
 
-Or just type naturally — NARA understands plain English and falls back to conversational LLM responses.
+Or just talk naturally — NARA has full conversational awareness of your session. After running the pipeline, you can ask things like:
+
+- *"What MITRE tactics were used?"*
+- *"Tell me more about the command injection"*
+- *"Which vulnerability was most critical?"*
+- *"How did you get root access?"*
+- *"Explain the exploit path step by step"*
+
+The LLM sees your scan findings, kill chain, and exploitation results, so it can answer in context.
 
 ### Typical Flow
 
