@@ -1,295 +1,384 @@
 """
-TerpAI client — wraps the NebulaOne-based TerpAI API at terpai.umd.edu.
+Agent — Blue Team Advisor (TerpAI)
 
-Authentication: TerpAI uses UMD Entra ID (Azure AD) SSO and issues short-lived
-JWTs (30 min TTL) via NebulaOne. This module handles token acquisition via
-Playwright browser automation and token caching.
+Takes red team findings and kill chain from the session and queries TerpAI
+for blue team remediation advice on each vulnerability.
+
+Fits into the existing NARA multi-agent pipeline:
+    session["findings"]   → read (from Scanner)
+    session["kill_chain"] → read (from Planner)
+    session["blue_team"]  → written back here
 
 Usage:
-    # First time (or when token expired): run auth flow in browser
-    client = TerpAIClient()
-    client.authenticate()           # opens browser, user logs in via UMD SSO
+    from nara.agents import blue_team
+    report = blue_team.run(session)
 
-    # Chat
-    reply = client.chat("scan this Flask app for vulnerabilities")
-    print(reply)
+Authentication:
+    Set TERPAI_BEARER_TOKEN in your .env file.
+    Tokens expire every ~30 minutes — re-login to TerpAI and copy a fresh
+    Bearer token from DevTools → Network → any request → Authorization header.
+
+TerpAI transport:
+    The API responds with Server-Sent Events (SSE), not JSON.
+    Each SSE event has a named type and a base64-encoded data payload.
+
+    SSE event types observed:
+        conversation-and-segment-id  — base64 JSON with ConversationId
+        step-update                  — base64 string e.g. "Thinking"
+        response-updated             — base64 token chunk (streamed word by word)
+        cosmos-db-session-tokens     — base64 JSON array of Cosmos session tokens
+        response-model               — base64 JSON with final metadata + title
+        no-more-data                 — empty, signals stream end
 """
 
+import base64
 import json
+import uuid
 import logging
-import os
-import time
-from pathlib import Path
-
 import requests
+
+from nara.utils import config as cfg
+from nara.utils import terminal_ui as ui
 
 logger = logging.getLogger(__name__)
 
-_BASE_URL = "https://terpai.umd.edu"
-_TOKEN_CACHE = Path.home() / ".nara" / "terpai_token.json"
+# ------------------------------------------------------------------ #
+# TerpAI configuration                                                 #
+# ------------------------------------------------------------------ #
+
+TERPAI_BASE_URL   = "https://terpai.umd.edu"
+TERPAI_GPT_SYSTEM = "056a216a-c338-4e02-b753-83abb5a2f37d"
+
+# SSE stream timeout — TerpAI responses can be long for detailed advice
+_STREAM_TIMEOUT_S = 120
+
+# ------------------------------------------------------------------ #
+# Blue team framing prepended to every query                           #
+# ------------------------------------------------------------------ #
+
+_BLUE_TEAM_PREAMBLE = (
+    "You are a blue team security advisor reviewing the output of a red team exercise. "
+    "For each vulnerability listed, provide: (1) a plain-English risk explanation, "
+    "(2) immediate remediation steps with specific code or config changes, "
+    "(3) detection strategies including what to log and what alerts to configure, "
+    "(4) long-term hardening recommendations. "
+    "Be specific and actionable. Format with a clear section per vulnerability.\n\n"
+)
 
 
-# --------------------------------------------------------------------------- #
-# Token management                                                             #
-# --------------------------------------------------------------------------- #
+# ------------------------------------------------------------------ #
+# Public interface                                                     #
+# ------------------------------------------------------------------ #
 
-def _save_token(token: str, expires_at: float) -> None:
-    _TOKEN_CACHE.parent.mkdir(parents=True, exist_ok=True)
-    _TOKEN_CACHE.write_text(json.dumps({"token": token, "expires_at": expires_at}))
-
-
-def _load_token() -> tuple[str, float] | None:
-    """Return (token, expires_at) if a cached token exists, else None."""
-    if not _TOKEN_CACHE.exists():
-        return None
-    try:
-        data = json.loads(_TOKEN_CACHE.read_text())
-        return data["token"], data["expires_at"]
-    except Exception:
-        return None
-
-
-def _token_is_valid(expires_at: float, margin_secs: int = 120) -> bool:
-    """True if the token won't expire within `margin_secs` seconds."""
-    return time.time() < (expires_at - margin_secs)
-
-
-def _decode_jwt_expiry(token: str) -> float:
-    """Extract the `exp` claim from a JWT without verifying the signature."""
-    import base64
-    parts = token.split(".")
-    if len(parts) != 3:
-        raise ValueError("Not a valid JWT")
-    # Pad base64 if needed
-    payload_b64 = parts[1] + "=" * (-len(parts[1]) % 4)
-    payload = json.loads(base64.urlsafe_b64decode(payload_b64))
-    return float(payload["exp"])
-
-
-# --------------------------------------------------------------------------- #
-# Browser-based auth (Playwright)                                              #
-# --------------------------------------------------------------------------- #
-
-def authenticate_via_browser() -> str:
+def run(session: dict) -> dict:
     """
-    Open a Playwright browser window pointing at TerpAI. The user logs in
-    through UMD SSO (Duo MFA etc). We intercept the first API request that
-    contains a Bearer token, save it, and close the browser.
+    Query TerpAI for blue team remediation advice based on session findings.
 
-    Returns the captured Bearer token string.
+    Args:
+        session: Shared session dict. Reads 'findings' and 'kill_chain'.
+                 Writes 'blue_team' (the full advice report) back to session.
+
+    Returns:
+        Blue team report as a dict with keys:
+            raw_advice      — full TerpAI response text (assembled from SSE stream)
+            per_vuln        — list of {vuln_type, advice} dicts (best-effort parsed)
+            conversation_id — TerpAI conversation ID for reference
     """
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        raise ImportError(
-            "Playwright is required for TerpAI auth.\n"
-            "Run: pip install playwright && playwright install chromium"
+    ui.agent_header("BLUE TEAM")
+
+    findings   = session.get("findings", [])
+    kill_chain = session.get("kill_chain", [])
+
+    if not findings:
+        ui.print_error("No findings in session — nothing to advise on.")
+        return {}
+
+    ui.print_info(f"Preparing blue team query for {len(findings)} finding(s)...")
+
+    token = _get_bearer_token()
+    if not token:
+        ui.print_error(
+            "TERPAI_BEARER_TOKEN not set in .env\n"
+            "Login to terpai.umd.edu → DevTools → Network → any request → "
+            "copy the Authorization: Bearer <token> header value."
         )
+        return {}
 
-    captured: dict = {}
+    client  = TerpAIClient(token)
+    message = _build_query(findings, kill_chain)
 
-    def _intercept(request):
-        auth = request.headers.get("authorization", "")
-        if auth.startswith("Bearer ") and "terpai.umd.edu" in request.url:
-            captured["token"] = auth[len("Bearer "):]
+    try:
+        ui.print_info("Streaming response from TerpAI...")
+        conversation_id, raw_advice = client.send_and_stream(message)
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=False)
-        ctx = browser.new_context()
-        page = ctx.new_page()
-        page.on("request", _intercept)
+    except RuntimeError as e:
+        ui.print_error(f"TerpAI request failed: {e}")
+        return {}
 
-        print("\n[TerpAI] Opening browser — log in with your UMD credentials.")
-        print("[TerpAI] Complete Duo MFA if prompted. The window will close automatically.\n")
+    ui.print_success("Blue team advice received from TerpAI.")
+    ui.stream_output(raw_advice)
 
-        page.goto(f"{_BASE_URL}/")
+    report = {
+        "raw_advice":      raw_advice,
+        "per_vuln":        _parse_per_vuln(raw_advice, findings),
+        "conversation_id": conversation_id,
+    }
 
-        # Poll until we capture a token (up to 3 minutes)
-        deadline = time.time() + 180
-        while not captured and time.time() < deadline:
-            time.sleep(0.5)
-            # Keep page alive / trigger a small navigation if needed
-            try:
-                page.wait_for_timeout(500)
-            except Exception:
-                pass
-
-        browser.close()
-
-    if not captured:
-        raise TimeoutError("TerpAI auth timed out — no Bearer token captured in 3 minutes.")
-
-    token = captured["token"]
-    expires_at = _decode_jwt_expiry(token)
-    _save_token(token, expires_at)
-    print(f"[TerpAI] Token captured and cached. Valid until {time.strftime('%H:%M:%S', time.localtime(expires_at))}.\n")
-    return token
+    session["blue_team"] = report
+    ui.print_info("Blue team report written to session['blue_team'].")
+    return report
 
 
-# --------------------------------------------------------------------------- #
-# TerpAI API client                                                            #
-# --------------------------------------------------------------------------- #
+# ------------------------------------------------------------------ #
+# TerpAI SSE client                                                    #
+# ------------------------------------------------------------------ #
 
 class TerpAIClient:
     """
-    Thin wrapper around the NebulaOne/TerpAI internal REST API.
+    HTTP client for the TerpAI internal API.
 
-    One client = one conversation. Call .authenticate() if you don't have a
-    cached token yet. Then call .chat(message) to get a response string.
+    TerpAI responds to POST /byGptSystemId/{id} with a Server-Sent Events
+    stream. Each line is either:
+        event: <event-name>
+        data:  <base64-encoded payload>
+    or a blank line (separator between events).
+
+    The response text is assembled by concatenating all decoded
+    'response-updated' data chunks in order.
     """
 
-    def __init__(self, token: str | None = None):
-        self._token: str | None = token
-        self._conversation_id: str | None = None
-        self._session = requests.Session()
+    def __init__(self, bearer_token: str):
+        self.token   = bearer_token
+        self.session = requests.Session()
+        self.session.headers.update(self._base_headers())
 
-        # If no token passed in, try the cache or env var
-        if not self._token:
-            env_token = os.getenv("TERPAI_TOKEN", "")
-            if env_token:
-                self._token = env_token
-            else:
-                cached = _load_token()
-                if cached:
-                    tok, exp = cached
-                    if _token_is_valid(exp):
-                        self._token = tok
-                    else:
-                        logger.info("Cached TerpAI token expired — re-auth needed.")
+    # ---------------------------------------------------------------- #
 
-    # ------------------------------------------------------------------ #
-    # Public API                                                           #
-    # ------------------------------------------------------------------ #
-
-    def authenticate(self) -> None:
-        """Acquire a fresh token via browser if not already valid."""
-        if self._token and self._is_token_valid():
-            return
-        self._token = authenticate_via_browser()
-
-    def chat(self, message: str, system: str = "") -> str:
+    def send_and_stream(self, message: str) -> tuple[str, str]:
         """
-        Send a message to TerpAI and return the full response text.
-        Creates a new conversation if one doesn't exist yet.
+        POST a message and consume the SSE stream to completion.
+
+        Returns:
+            (conversation_id, full_response_text) tuple.
+
+        Raises:
+            RuntimeError on HTTP error or malformed stream.
         """
-        self._ensure_token()
-        if not self._conversation_id:
-            self._conversation_id = self._create_conversation()
-
-        return self._send_segment(message, system)
-
-    def reset_conversation(self) -> None:
-        """Start a fresh conversation on the next .chat() call."""
-        self._conversation_id = None
-
-    # ------------------------------------------------------------------ #
-    # Internal helpers                                                     #
-    # ------------------------------------------------------------------ #
-
-    def _ensure_token(self) -> None:
-        if not self._token or not self._is_token_valid():
-            self.authenticate()
-
-    def _is_token_valid(self) -> bool:
-        if not self._token:
-            return False
-        try:
-            exp = _decode_jwt_expiry(self._token)
-            return _token_is_valid(exp)
-        except Exception:
-            return False
-
-    def _headers(self) -> dict:
-        return {
-            "Authorization": f"Bearer {self._token}",
-            "Content-Type": "application/json",
-            "Accept": "*/*",
+        url = (
+            f"{TERPAI_BASE_URL}/api/internal/userConversations"
+            f"/byGptSystemId/{TERPAI_GPT_SYSTEM}"
+        )
+        payload = {
+            "question":             message,
+            "visionImageIds":       [],
+            "attachmentIds":        [],
+            "session":              {"sessionIdentifier": str(uuid.uuid4())},
+            "segmentTraceLogLevel": "NonPersisted",
         }
 
-    def _create_conversation(self) -> str:
-        """POST to create a new conversation, return its ID."""
-        url = f"{_BASE_URL}/api/internal/userConversations"
-        body = {"title": "NARA Session"}
-        resp = self._session.post(url, json=body, headers=self._headers(), timeout=30)
-        if resp.status_code == 401:
-            # Token rejected — re-auth and retry once
-            self.authenticate()
-            resp = self._session.post(url, json=body, headers=self._headers(), timeout=30)
-        resp.raise_for_status()
-        data = resp.json()
-        # Response likely has an "id" or "conversationId" field
-        conv_id = data.get("id") or data.get("conversationId") or data.get("data", {}).get("id")
-        if not conv_id:
-            raise RuntimeError(f"TerpAI: could not find conversation ID in response: {data}")
-        logger.debug("TerpAI conversation created: %s", conv_id)
-        return conv_id
-
-    def _send_segment(self, message: str, system: str = "") -> str:
-        """
-        POST a message segment and collect the SSE stream into a full string.
-        """
-        url = f"{_BASE_URL}/api/internal/userConversations/{self._conversation_id}/segments"
-
-        # Build request body — NebulaOne segment format
-        body: dict = {"content": message, "role": "user"}
-        if system:
-            body["systemPrompt"] = system
-
-        resp = self._session.post(
+        resp = self.session.post(
             url,
-            json=body,
-            headers={**self._headers(), "Accept": "text/event-stream"},
-            stream=True,
-            timeout=120,
+            json=payload,
+            headers={"x-request-id": str(uuid.uuid4())},
+            stream=True,           # keep connection open for SSE
+            timeout=_STREAM_TIMEOUT_S,
         )
 
-        if resp.status_code == 401:
-            self.authenticate()
-            resp = self._session.post(
-                url,
-                json=body,
-                headers={**self._headers(), "Accept": "text/event-stream"},
-                stream=True,
-                timeout=120,
+        if not resp.ok:
+            raise RuntimeError(
+                f"TerpAI POST → {resp.status_code}: {resp.text[:300]}"
             )
 
-        resp.raise_for_status()
-        return self._parse_sse(resp)
+        return self._parse_sse_stream(resp)
+
+    # ---------------------------------------------------------------- #
+    # SSE stream parser                                                  #
+    # ---------------------------------------------------------------- #
 
     @staticmethod
-    def _parse_sse(response) -> str:
+    def _parse_sse_stream(resp: requests.Response) -> tuple[str, str]:
         """
-        Consume a Server-Sent Events stream and return the concatenated text content.
+        Parse the raw SSE byte stream from TerpAI.
 
-        SSE lines look like:
-            data: {"content": "chunk"}
-            data: [DONE]
+        SSE format per event block:
+            event: <name>\\n
+            data: <base64>\\n
+            \\n                  ← blank line = end of event
+
+        Assembles the full response by decoding and concatenating every
+        'response-updated' chunk in order.
+
+        Returns:
+            (conversation_id, assembled_response_text)
         """
-        chunks: list[str] = []
-        for raw_line in response.iter_lines(decode_unicode=True):
-            if not raw_line:
-                continue
-            if raw_line.startswith("data:"):
-                payload = raw_line[5:].strip()
-                if payload == "[DONE]":
+        conversation_id = ""
+        response_chunks = []
+        current_event   = ""
+
+        for raw_line in resp.iter_lines(decode_unicode=True):
+            line = raw_line.strip() if raw_line else ""
+
+            if line.startswith("event:"):
+                current_event = line[len("event:"):].strip()
+
+            elif line.startswith("data:"):
+                raw_data = line[len("data:"):].strip()
+                if not raw_data:
+                    continue
+
+                decoded = _b64_decode(raw_data)
+
+                if current_event == "conversation-and-segment-id":
+                    # {"ConversationId": "...", "ConversationSegmentId": "..."}
+                    try:
+                        meta = json.loads(decoded)
+                        conversation_id = (
+                            meta.get("ConversationId")
+                            or meta.get("conversationId")
+                            or ""
+                        )
+                        logger.debug(f"ConversationId: {conversation_id}")
+                    except json.JSONDecodeError:
+                        logger.warning(
+                            f"Could not parse conversation-and-segment-id: {decoded}"
+                        )
+
+                elif current_event == "response-updated":
+                    # Each chunk is a token or short phrase — concatenate directly
+                    response_chunks.append(decoded)
+
+                elif current_event == "response-model":
+                    # Final metadata — log for debugging
+                    try:
+                        logger.debug(f"response-model: {json.loads(decoded)}")
+                    except json.JSONDecodeError:
+                        pass
+
+                elif current_event == "no-more-data":
+                    break  # stream finished
+
+                elif current_event == "step-update":
+                    logger.debug(f"step-update: {decoded}")
+
+                # cosmos-db-session-tokens — routing only, not needed
+
+            elif line == "":
+                current_event = ""  # blank line = event separator
+
+        full_response = "".join(response_chunks).strip()
+
+        if not full_response:
+            raise RuntimeError(
+                "SSE stream completed but no response-updated chunks received. "
+                f"conversation_id={conversation_id!r}"
+            )
+
+        return conversation_id, full_response
+
+    # ---------------------------------------------------------------- #
+    # Headers                                                            #
+    # ---------------------------------------------------------------- #
+
+    def _base_headers(self) -> dict:
+        return {
+            "Authorization": f"Bearer {self.token}",
+            "Content-Type":  "application/json",
+            "Accept":        "text/event-stream",  # tells server we want SSE
+            "x-timezone":    "America/New_York",
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/146.0.0.0 Safari/537.36"
+            ),
+        }
+
+
+# ------------------------------------------------------------------ #
+# Message builder                                                      #
+# ------------------------------------------------------------------ #
+
+def _build_query(findings: list[dict], kill_chain: list[dict]) -> str:
+    """
+    Build the natural-language query to send to TerpAI.
+    Includes the blue team framing preamble, all findings, and the kill chain.
+    """
+    lines = [
+        _BLUE_TEAM_PREAMBLE,
+        "## Vulnerabilities Found\n",
+    ]
+
+    for i, f in enumerate(findings, 1):
+        lines.append(
+            f"{i}. [{f.get('severity', 'UNKNOWN')}] {f.get('type', 'Unknown')}\n"
+            f"   File: {f.get('file', 'unknown')}:{f.get('line', '?')}\n"
+            f"   Description: {f.get('description', 'No description')}\n"
+        )
+
+    if kill_chain:
+        lines.append("\n## Red Team Kill Chain (for context)\n")
+        for i, step in enumerate(kill_chain, 1):
+            lines.append(
+                f"Step {i}: {step.get('step', '')}\n"
+                f"  Command:      {step.get('command', '')}\n"
+                f"  MITRE Tactic: {step.get('mitre_tactic', '')}\n"
+                f"  Vuln class:   {step.get('vuln_type', '')}\n"
+            )
+
+    return "\n".join(lines)
+
+
+# ------------------------------------------------------------------ #
+# Response parsing                                                     #
+# ------------------------------------------------------------------ #
+
+def _parse_per_vuln(raw_advice: str, findings: list[dict]) -> list[dict]:
+    """
+    Best-effort split of the raw advice into per-vulnerability sections.
+    Matches sections by looking for the vuln type name in headers/lines.
+
+    Returns a list of {vuln_type, advice} dicts — one per finding.
+    If a section can't be isolated, the full advice is used as fallback.
+    """
+    per_vuln = []
+    lines    = raw_advice.splitlines()
+
+    for finding in findings:
+        vuln_type     = finding.get("type", "Unknown")
+        section_lines = []
+        in_section    = False
+
+        for line in lines:
+            if vuln_type.lower() in line.lower():
+                in_section = True
+            if in_section:
+                section_lines.append(line)
+                # Stop at the next major heading
+                if len(section_lines) > 3 and line.startswith(("##", "---", "===")):
                     break
-                try:
-                    obj = json.loads(payload)
-                    # Try common field names used by NebulaOne / OpenAI-compatible APIs
-                    text = (
-                        obj.get("content")
-                        or obj.get("text")
-                        or obj.get("delta", {}).get("content")
-                        or obj.get("choices", [{}])[0].get("delta", {}).get("content")
-                        or ""
-                    )
-                    if text:
-                        chunks.append(text)
-                except json.JSONDecodeError:
-                    # Non-JSON SSE line — skip
-                    pass
-            elif raw_line.startswith("event:") or raw_line.startswith(":"):
-                # SSE comments / event type lines — ignore
-                pass
 
-        return "".join(chunks)
+        per_vuln.append({
+            "vuln_type": vuln_type,
+            "advice":    "\n".join(section_lines).strip() or raw_advice,
+        })
+
+    return per_vuln
+
+
+# ------------------------------------------------------------------ #
+# Helpers                                                              #
+# ------------------------------------------------------------------ #
+
+def _b64_decode(s: str) -> str:
+    """
+    Decode a base64 string to UTF-8 text.
+    Returns the original string unchanged on failure.
+    """
+    try:
+        return base64.b64decode(s).decode("utf-8")
+    except Exception:
+        return s
+
+
+def _get_bearer_token() -> str:
+    """Read TERPAI_BEARER_TOKEN from nara config. Returns '' if unset."""
+    return getattr(cfg, "TERPAI_BEARER_TOKEN", "") or ""
