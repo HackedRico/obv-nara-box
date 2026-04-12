@@ -294,7 +294,7 @@ def print_exploit_report(session: dict, results: list[dict]) -> None:
     chain_table = Table(box=box.SIMPLE, expand=False, padding=(0, 2))
     chain_table.add_column("#", style="dim", width=3)
     chain_table.add_column("Step", style="bold white")
-    chain_table.add_column("MITRE Tactic", style="dim")
+    chain_table.add_column("MITRE ATT&CK TTP", style="dim")
     chain_table.add_column("Status")
 
     status_display = {
