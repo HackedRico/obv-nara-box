@@ -4,8 +4,6 @@ An AI-powered penetration testing CLI that orchestrates three agents to scan cod
 
 Built for **Bitcamp 2026** (Cybersecurity Track + Neelbauer Agent Revolution Award).
 
-Repo for dummy app: https://github.com/aprameyak/exploitable-dummy-app
-
 > Security tools tell you *what* is vulnerable. NARA shows you *what happens when it gets exploited* — autonomously, in real time, end to end.
 
 ---
@@ -22,31 +20,32 @@ $ nara
  ██║ ╚████║██║  ██║██║  ██║██║  ██║
  ╚═╝  ╚═══╝╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝
 
-nara > init
-[+] Building Docker image... done
-[+] Container running — VNC on :5901, app port :8080
+nara > pipeline https://github.com/aprameyak/exploitable-dummy-app
 
-nara > scan /path/to/vulnerable-app
 [SCANNER] Running Semgrep... Running Bandit...
 [SCANNER] Found 3 vulnerabilities:
   CRITICAL — Command Injection in app.py:23
   HIGH     — SQL Injection in app.py:45
   MEDIUM   — Reflected XSS in templates/index.html:15
 
-nara > plan
 [PLANNER] Designing kill chain from 3 findings...
   1. Reconnaissance — confirm app is live
   2. Command Injection — whoami
   3. Upload ransomware payload
   4. Ransomware Deployment
 
-nara > exploit
-[EXPLOITER] Executing 4 kill chain steps...
+[EXPLOITER] Executing kill chain...
 [STEP 1/4] Reconnaissance            ✓
-[STEP 2/4] Command Injection — whoami ✓  (www-data)
+[STEP 2/4] Command Injection — whoami ✓
 [STEP 3/4] Upload ransomware payload  ✓
 [STEP 4/4] Ransomware Deployment      ✓
-Kill chain complete — check VNC :5901 to see the desktop.
+
+██████╗ ██╗    ██╗███╗   ██╗███████╗██████╗
+██╔══██╗██║    ██║████╗  ██║██╔════╝██╔══██╗
+██████╔╝██║ █╗ ██║██╔██╗ ██║█████╗  ██║  ██║
+██╔═══╝ ██║███╗██║██║╚██╗██║██╔══╝  ██║  ██║
+██║     ╚███╔███╔╝██║ ╚████║███████╗██████╔╝
+╚═╝      ╚══╝╚══╝ ╚═╝  ╚═══╝╚══════╝╚═════╝
 ```
 
 ---
@@ -54,7 +53,7 @@ Kill chain complete — check VNC :5901 to see the desktop.
 ## How It Works
 
 ```
-USER (natural language)
+USER (natural language or commands)
   │
   ▼
 nara CLI (interactive REPL)
@@ -66,12 +65,12 @@ Orchestrator (intent routing)
   │     Runs Semgrep + Bandit → LLM deduplicates and prioritizes findings
   │
   ├── Agent 2: Planner
-  │     Takes findings → LLM designs ordered kill chain (always ends with ransomware)
+  │     Takes findings → designs ordered kill chain ending with ransomware deployment
   │
   └── Agent 3: Exploiter
         Provisions Docker container → executes kill chain via docker exec
-        LLM assesses each step → adapts on failure (retry / rewrite command / abort)
-        Deploys ransomware payload as final step
+        LLM assesses each step → adapts on failure (retry / rewrite / abort)
+        Deploys ransomware payload as final step → visible on VNC desktop
 ```
 
 **Host machine** = scanning, planning, orchestration, LLM reasoning
@@ -85,7 +84,7 @@ Orchestrator (intent routing)
 
 - Python 3.10+
 - Docker
-- One of: [Ollama](https://ollama.com) (free, local) or an [Anthropic API key](https://console.anthropic.com)
+- An LLM backend (see below)
 
 ### Install
 
@@ -100,11 +99,14 @@ source .venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
-pip install .
+pip install -e .
+
+# Install SAST tools (used by the Scanner agent)
+pip install semgrep bandit
 
 # Configure LLM backend
 cp .env.example .env
-# Edit .env — set LLM_BACKEND and API keys
+# Edit .env — set LLM_BACKEND and API keys (see below)
 
 # Build the Docker target container
 docker build -t nara-target ./nara/docker/
@@ -116,9 +118,9 @@ Set `LLM_BACKEND` in `.env` — no code changes needed to switch:
 
 | Backend | Config | Use case |
 |---|---|---|
-| `ollama` | `OLLAMA_MODEL=qwen2.5` | Development — free, local. Run `ollama pull qwen2.5` first. |
-| `claude` | `ANTHROPIC_API_KEY=sk-...` | Demo — best reasoning quality. |
-| `featherless` | `FEATHERLESS_API_KEY=...` | Open-source models via OpenAI-compatible API. |
+| `featherless` (default) | `FEATHERLESS_API_KEY=...`, `FEATHERLESS_MODEL=microsoft/Phi-4-mini-instruct` | OpenAI-compatible API with open-source models |
+| `claude` | `ANTHROPIC_API_KEY=sk-...` | Best reasoning quality |
+| `ollama` | `OLLAMA_MODEL=qwen2.5` | Free, local. Run `ollama pull qwen2.5` first |
 
 ---
 
@@ -137,16 +139,17 @@ This opens an interactive REPL. Available commands:
 | `scan <path\|url>` | Run Semgrep + Bandit, LLM triages results |
 | `plan` | Design a kill chain from scan findings |
 | `exploit` | Execute the kill chain against the container |
+| `report` | Display the post-exploitation pentest report |
 | `status` | Show current findings, kill chain, and container state |
 | `reset` | Tear down container and clear session |
 | `help` | Show available commands |
 | `exit` | End session |
 
-`scan` and `pipeline` accept a local path (`scan .`) or a GitHub URL (`scan https://github.com/user/repo`). URLs are cloned locally for SAST analysis.
+`scan` and `pipeline` accept a local path (`scan .`) or a GitHub URL (`scan https://github.com/user/repo`). URLs are shallow-cloned locally for SAST analysis.
 
 Or just type naturally — NARA understands plain English and falls back to conversational LLM responses.
 
-### Typical flow
+### Typical Flow
 
 ```
 # One command — full pipeline
@@ -156,9 +159,26 @@ nara > pipeline https://github.com/aprameyak/exploitable-dummy-app
 nara > scan https://github.com/aprameyak/exploitable-dummy-app
 nara > plan
 nara > exploit
+nara > report
 ```
 
-During exploitation, a **noVNC viewer** opens automatically in your browser at `http://localhost:6080` so you can watch the ransomware desktop effects live (wallpaper change, ransom note, "encrypted" files).
+During exploitation, a **noVNC viewer** opens automatically in your browser at `http://localhost:6080` so you can watch the attack play out live on the target desktop:
+
+- Ransom note dropped on the desktop
+- Sensitive files renamed to `*.NARA_ENCRYPTED` across the filesystem
+- Application source code encrypted in place
+- Desktop wallpaper hijacked
+- Ransom popups scattered across the screen
+- Exfiltration evidence planted (stolen credentials, upload manifests)
+- Full post-exploitation pentest report generated in the terminal
+
+### Ports
+
+| Port | Service |
+|---|---|
+| `5901` | VNC (direct TigerVNC) |
+| `6080` | noVNC (browser-based VNC viewer) |
+| `8080` | Target web application |
 
 ---
 
@@ -167,20 +187,21 @@ During exploitation, a **noVNC viewer** opens automatically in your browser at `
 ```
 nara/
 ├── cli.py                 # Interactive REPL entry point
-├── orchestrator.py        # NLP intent routing → agents
+├── orchestrator.py        # Intent routing → agents
 ├── agents/
 │   ├── scanner.py         # Semgrep + Bandit → LLM triage
 │   ├── planner.py         # Kill chain architect
 │   └── exploiter.py       # Container provisioning + exploitation
 ├── docker/
-│   ├── Dockerfile         # Ubuntu 22.04 + XFCE + VNC
+│   ├── Dockerfile         # Ubuntu 22.04 + XFCE + TigerVNC + noVNC
 │   ├── docker_manager.py  # Container lifecycle (build/run/exec/reset)
 │   └── start_vnc.sh       # Container entrypoint
 ├── payloads/
-│   ├── ransomware.py      # Wallpaper, ransom note, fake encryption
-│   └── assets/            # Default wallpaper + note template
+│   ├── ransomware.py      # Post-exploitation payload (visual effects)
+│   └── assets/            # Wallpaper + note assets
 └── utils/
     ├── llm_client.py      # Ollama / Claude / Featherless abstraction
+    ├── llm_json.py        # Robust JSON parsing for LLM output
     ├── terminal_ui.py     # Rich-based terminal output
     └── config.py          # .env loading + validation
 ```
@@ -189,9 +210,7 @@ nara/
 
 ## Target Application
 
-NARA is designed to exploit a separate **Pokemon-themed vulnerable Flask app** ([pokedex-vuln](https://github.com/HackedRico/pokedex-vuln)) with deliberate injection flaws. The Exploiter agent clones it into the container at runtime.
-
-Primary exploit path: **command injection** on `GET /api/pokemon?name=<input>` — user input goes straight to `os.system()` with no sanitization.
+NARA exploits a separate **Pokemon-themed vulnerable Flask app** ([exploitable-dummy-app](https://github.com/aprameyak/exploitable-dummy-app)) with deliberate injection flaws. The Exploiter agent clones it into the Docker container at runtime and provisions it automatically.
 
 ---
 
@@ -200,8 +219,7 @@ Primary exploit path: **command injection** on `GET /api/pokemon?name=<input>` �
 This tool is built for **educational and authorized security research only**.
 
 - Only targets deliberately vulnerable applications in isolated Docker containers
-- Ransomware payload is a visual simulation — no real encryption or exfiltration
-- Container is disposable and resettable
+- Container is disposable and fully resettable (`nara > reset`)
 - Never use against systems without explicit written permission
 
 ---
@@ -211,13 +229,13 @@ This tool is built for **educational and authorized security research only**.
 | Layer | Tools |
 |---|---|
 | CLI | Python, prompt_toolkit, Rich |
-| LLM | Ollama/Qwen2.5, Claude API, or Featherless |
+| LLM | Featherless (Phi-4-mini), Claude API, or Ollama |
 | Static Analysis | Semgrep, Bandit |
-| Container | Docker, Ubuntu 22.04, XFCE, TigerVNC |
+| Container | Docker, Ubuntu 22.04, XFCE, TigerVNC, noVNC |
 | Target App | Flask (separate repo) |
 
 ---
 
 ## Team
 
-Built at Bitcamp 2025, University of Maryland.
+Built at Bitcamp 2026, University of Maryland.
