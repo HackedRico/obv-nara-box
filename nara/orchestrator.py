@@ -349,21 +349,54 @@ def _build_status(session: dict) -> str:
     return "\n".join(lines)
 
 
+def _build_session_context(session: dict) -> str:
+    """Build a rich context string from session state for the LLM."""
+    parts = [f"Container running: {session['container_running']}"]
+
+    if session["findings"]:
+        parts.append(f"\n## Vulnerabilities Found ({len(session['findings'])})")
+        for f in session["findings"]:
+            sev = f.get("severity", "?").upper()
+            parts.append(
+                f"- [{sev}] {f.get('type','?')} in {f.get('file','?')}:{f.get('line','?')} — "
+                f"{f.get('description','')} Exploitability: {f.get('exploitability','')}"
+            )
+
+    if session["kill_chain"]:
+        parts.append(f"\n## Kill Chain ({len(session['kill_chain'])} steps)")
+        for i, step in enumerate(session["kill_chain"], 1):
+            parts.append(
+                f"- Step {i}: {step.get('step','?')} [{step.get('mitre_tactic','')}]\n"
+                f"  Command: {step.get('command','')}\n"
+                f"  Expected: {step.get('expected_outcome','')}"
+            )
+
+    results = session.get("exploit_results")
+    if results:
+        parts.append(f"\n## Exploitation Results")
+        for r in results:
+            if isinstance(r, dict):
+                parts.append(f"- {r.get('step','?')}: {r.get('status','?')}")
+            else:
+                parts.append(f"- {r}")
+
+    return "\n".join(parts)
+
+
 def _chat_response(user_input: str, session: dict) -> str:
     """Pass unrecognized input to the LLM for a conversational response."""
     llm = _get_llm()
 
-    # Build context summary for the LLM
-    context = f"[Session context] Findings: {len(session['findings'])}, Kill chain steps: {len(session['kill_chain'])}, Container running: {session['container_running']}"
+    context = _build_session_context(session)
 
     session["history"].append({"role": "user", "content": user_input})
 
-    # Keep last 20 turns to avoid context overflow
-    messages = session["history"][-20:]
+    # Keep last 10 turns to leave room for session context
+    messages = session["history"][-10:]
 
     try:
         with ui.spinner("Thinking..."):
-            response = llm.chat(messages, system=_SYSTEM_PROMPT + "\n" + context)
+            response = llm.chat(messages, system=_SYSTEM_PROMPT + "\n\n" + context)
     except RuntimeError as e:
         return f"LLM error: {e}"
 
