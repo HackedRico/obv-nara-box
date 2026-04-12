@@ -52,8 +52,6 @@ nara > pipeline https://github.com/aprameyak/exploitable-dummy-app
 
 ## How It Works
 
-![NARA Architecture](docs/architecture.jpg)
-
 ```
 USER (natural language or commands)
   │
@@ -74,6 +72,8 @@ Orchestrator (intent routing)
         LLM assesses each step → adapts on failure (retry / rewrite / abort)
         Deploys ransomware payload as final step → visible on VNC desktop
 ```
+
+![NARA Architecture](docs/architecture.jpg)
 
 **Host machine** = scanning, planning, orchestration, LLM reasoning
 **Docker container** = disposable target with Ubuntu 22.04 + XFCE desktop + noVNC
