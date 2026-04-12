@@ -20,6 +20,7 @@ setup(
         "rich>=13.0.0",
         "prompt_toolkit>=3.0.0",
         "requests>=2.31.0",
+        "openai>=1.0.0",
     ],
     entry_points={
         "console_scripts": [

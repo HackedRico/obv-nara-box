@@ -1,8 +1,8 @@
 """
-LLM abstraction layer — unified interface for Ollama, Claude, and Featherless.
+LLM abstraction layer — unified interface for Featherless (default), Ollama, and Claude.
 
-All agents call LLMClient().chat(...). The backend is controlled entirely by
-LLM_BACKEND in .env — zero code changes required to switch.
+All agents call LLMClient().chat(...). The backend is controlled by LLM_BACKEND
+and model IDs in .env (see nara.utils.config FEATHERLESS_MODELS / FEATHERLESS_MODEL).
 
 Interface (contractual — do not change signatures):
     llm = LLMClient()

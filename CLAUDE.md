@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**NARA** — An AI-powered autonomous penetration testing CLI built for Bitcamp 2025 (Cybersecurity Track). It orchestrates three AI agents (Scanner, Planner, Exploiter) to scan codebases, design attack chains, and execute exploits against an isolated Docker container running a vulnerable Flask app. All output streams live to the terminal.
+**NARA** — An AI-powered autonomous penetration testing CLI built for Bitcamp 2026 (Cybersecurity Track + Neelbauer Agent Revolution Award). It orchestrates three AI agents (Scanner, Planner, Exploiter) to scan codebases, design attack chains, and execute exploits against an isolated Docker container running a vulnerable Flask app. All output streams live to the terminal; the container exposes VNC (5901), noVNC (6080), and the target app (8080) so the user can watch exploitation in real time.
 
 ## Setup & Commands
 
@@ -23,13 +23,13 @@ There are no tests or linting configured.
 
 ## LLM Backend
 
-Three backends, switched via `LLM_BACKEND` in `.env` — no code changes needed:
+Three backends, switched via `LLM_BACKEND` in `.env` — no code changes needed. **Default:** `featherless` with `microsoft/Phi-4-mini-instruct` (see [featherless.ai/models](https://featherless.ai/models)).
 
 | Backend | Env var | Use case |
 |---|---|---|
-| `ollama` | `OLLAMA_MODEL=qwen2.5` | Local dev (free) |
-| `claude` | `ANTHROPIC_API_KEY=...` | Demo (best quality) |
-| `featherless` | `FEATHERLESS_API_KEY=...`, `FEATHERLESS_MODEL=...` | Open-source models via OpenAI-compatible API (requires `pip install openai`) |
+| `featherless` | `FEATHERLESS_API_KEY=...`, `FEATHERLESS_MODEL=microsoft/Phi-4-mini-instruct` (default) | Primary — OpenAI-compatible API (`pip install openai`) |
+| `ollama` | `OLLAMA_MODEL=qwen2.5-coder:7b-instruct` | Local dev (free) |
+| `claude` | `ANTHROPIC_API_KEY=...` | Anthropic API |
 
 `nara/utils/llm_client.py` abstracts all three behind `LLMClient.chat(messages, system)`. All agents use this single interface.
 
@@ -39,15 +39,19 @@ Three backends, switched via `LLM_BACKEND` in `.env` — no code changes needed:
 
 ```
 User input → cli.py (REPL) → orchestrator.route() → keyword intent classifier
-  ├─ "scan"    → scanner.run(path, session) → Semgrep + Bandit → LLM triage → findings list
-  ├─ "plan"    → planner.run(findings, session) → LLM kill chain design → step list
-  ├─ "exploit" → exploiter.run(kill_chain, session) → docker exec → LLM step assessment
-  └─ other     → LLM conversational fallback
+  ├─ "pipeline" → scan → plan → exploit (full auto, end to end)
+  ├─ "scan"     → scanner.run(path, session) → Semgrep + Bandit → LLM triage → findings list
+  ├─ "plan"     → planner.run(findings, session) → LLM kill chain design → step list
+  ├─ "exploit"  → exploiter.run(kill_chain, session) → docker exec → LLM step assessment
+  ├─ "init" / "reset" / "status" / "help" / "exit" → DockerManager + session plumbing
+  └─ chat       → LLM conversational fallback
 ```
+
+Intent classification is keyword-based in `orchestrator._classify_intent()`. When the user passes a URL or path argument to `scan`/`pipeline`, `_clone_repo()` shallow-clones it into `./nara_targets/<repo>/` (normalizing GitHub `/tree/`, `/blob/` URLs) and scans the local copy.
 
 ### Session state
 
-`cli.py` creates a session dict (`findings`, `kill_chain`, `container_running`, `history`) passed to every `orchestrator.route()` call. Agents mutate it directly.
+`cli.py` creates a session dict (`findings`, `kill_chain`, `container_running`, `app_provisioned`, `history`, and optionally `scan_path` / `target_repo`) passed to every `orchestrator.route()` call. Agents mutate it directly.
 
 ### Agent contracts
 
@@ -69,15 +73,20 @@ For each kill chain step, the Exploiter:
 
 ### Docker integration
 
-`nara/docker/docker_manager.py` and the Dockerfile exist but are stubs (empty/minimal). The Exploiter gracefully falls back to **DRY RUN mode** (prints commands without executing) when DockerManager can't be imported or initialized. The expected interface is:
+`nara/docker/docker_manager.py` is fully implemented and shells out to the `docker` CLI. The container image (`nara-target`) is pre-baked with Firefox + an XFCE/VNC desktop so the Exploiter can drive the browser live. Key methods beyond the base contract:
 
-```python
-DockerManager().build() / .run() / .exec(cmd: str) -> str / .reset() / .is_running() -> bool
-```
+- `exec(cmd) -> str` — run a command, capture combined stdout+stderr, 120s timeout
+- `exec_detached(cmd)` — fire-and-forget (used to launch the tail-follow terminal, Firefox, etc.)
+- `copy_to_container(host_path, container_path)` — `docker cp` wrapper
+- `write_to_container_file(path, text)` / `append_to_container_file(path, text)` — pipe UTF-8 into the container via `bash -c 'cat > …'` / `tee -a`
+
+The Exploiter still has a **DRY RUN fallback**: if DockerManager can't be imported or a step's `_exec` returns None, commands are printed rather than executed. The Dockerfile path is resolved relative to `docker_manager.py` so the package works both editable-installed and from a site-packages copy.
+
+`DOCKERFILE_DIR`, `IMAGE_NAME = "nara-target"`, and `CONTAINER_NAME = "nara-container"` are module constants — if you rename the image/container you must change both places.
 
 ### Vulnerable app target
 
-The Exploiter clones a separate repo (`VULN_APP_REPO` constant in `exploiter.py` — currently a placeholder URL) into the container at runtime. Primary exploit path: command injection on `GET /api/pokemon?name=<input>`.
+The Exploiter clones a separate vulnerable-app repo into the container at runtime. The real target lives at `https://github.com/aprameyak/exploitable-dummy-app` (per README), but the `VULN_APP_REPO` constant at the top of `nara/agents/exploiter.py` is still a `PLACEHOLDER` — update that constant before running against the real target. Primary exploit path: command injection on `GET /api/pokemon?name=<input>`.
 
 ### Ransomware payload
 

