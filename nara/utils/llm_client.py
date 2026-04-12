@@ -113,9 +113,29 @@ class LLMClient:
             full_messages.append({"role": "system", "content": system})
         full_messages.extend(messages)
 
+        # Phi-4-mini on Featherless has a 4096-token context window.
+        # Use conservative token estimate: 1 token ≈ 3 characters for code/JSON.
+        MODEL_CTX = 4096
+        MAX_OUTPUT = 1024
+        INPUT_BUDGET_TOKENS = MODEL_CTX - MAX_OUTPUT  # 3072 tokens
+        INPUT_BUDGET_CHARS = INPUT_BUDGET_TOKENS * 3   # ~9216 chars (conservative)
+
+        total_chars = sum(len(m.get("content", "")) for m in full_messages)
+        while total_chars > INPUT_BUDGET_CHARS:
+            # Find the largest user message and trim it
+            trimmed = False
+            for m in reversed(full_messages):
+                if m["role"] == "user" and len(m["content"]) > 300:
+                    m["content"] = m["content"][:len(m["content"]) // 2] + "\n[truncated]"
+                    trimmed = True
+                    break
+            if not trimmed:
+                break
+            total_chars = sum(len(m.get("content", "")) for m in full_messages)
+
         response = self._client.chat.completions.create(
             model=cfg.FEATHERLESS_MODEL,
             messages=full_messages,
-            max_tokens=4096,
+            max_tokens=MAX_OUTPUT,
         )
         return response.choices[0].message.content

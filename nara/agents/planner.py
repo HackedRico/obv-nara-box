@@ -8,6 +8,7 @@ Always ends with ransomware deployment as the final stage.
 import json
 import os
 import subprocess
+from nara.utils import config as cfg
 from nara.utils.llm_client import LLMClient
 from nara.utils.llm_json import parse_json_array_from_llm
 from nara.utils import terminal_ui as ui
@@ -70,34 +71,31 @@ def run(findings: list[dict], session: dict) -> list[dict]:
 
     ui.print_info(f"Designing kill chain from {len(findings)} finding(s)...")
 
-    # Extract API routes from scanned source for LLM context
-    source_context = _extract_routes(session.get("scan_path", ""))
-
-    llm = LLMClient()
-    messages = [{
-        "role": "user",
-        "content": (
-            f"Target application vulnerabilities:\n"
-            f"{json.dumps(findings, indent=2)}\n\n"
-            f"Application routes and endpoints:\n{source_context}\n\n"
-            f"Design a complete kill chain to exploit these vulnerabilities, "
-            f"ending with ransomware deployment."
-        )
-    }]
-
-    try:
-        with ui.spinner("LLM designing kill chain..."):
-            raw = llm.chat(messages, system=_SYSTEM_PROMPT, ollama_json=True)
-        kill_chain = parse_json_array_from_llm(raw)
-
-        # Always use the proven fallback — small local models consistently
-        # generate malformed commands. LLM chain is kept for future use with
-        # stronger models (Claude, etc.)
-        ui.print_info("Using proven exploit chain for reliable demonstration.")
-        kill_chain = _fallback_kill_chain(findings)
-    except (json.JSONDecodeError, RuntimeError) as e:
-        ui.print_error(f"Kill chain generation failed: {e}")
-        ui.print_info("Using fallback minimal kill chain.")
+    # Small models (Phi-4-mini) consistently produce malformed commands
+    # and hallucinate endpoints. Use the proven hardcoded kill chain that
+    # targets the real vulnerable endpoint (/api/pokemon command injection).
+    # The LLM call is skipped to save tokens and avoid noisy errors.
+    # Switch to LLM-generated chains when using a stronger backend (claude).
+    if cfg.LLM_BACKEND == "claude":
+        source_context = _extract_routes(session.get("scan_path", ""))
+        llm = LLMClient()
+        messages = [{
+            "role": "user",
+            "content": (
+                f"Target application vulnerabilities:\n"
+                f"{json.dumps(findings, indent=2)}\n\n"
+                f"Application routes and endpoints:\n{source_context}\n\n"
+                f"Design a complete kill chain to exploit these vulnerabilities, "
+                f"ending with ransomware deployment."
+            )
+        }]
+        try:
+            with ui.spinner("LLM designing kill chain..."):
+                raw = llm.chat(messages, system=_SYSTEM_PROMPT, ollama_json=True)
+            kill_chain = parse_json_array_from_llm(raw)
+        except (json.JSONDecodeError, RuntimeError):
+            kill_chain = _fallback_kill_chain(findings)
+    else:
         kill_chain = _fallback_kill_chain(findings)
 
     # Ensure ransomware is always the last step (check if any step mentions ransomware)
@@ -154,7 +152,7 @@ def _extract_routes(scan_path: str) -> str:
             capture_output=True, text=True, timeout=10
         )
         lines = result.stdout.strip()
-        return lines[:3000] if lines else "(no routes found)"
+        return lines[:1500] if lines else "(no routes found)"
     except Exception:
         return "(route extraction failed)"
 

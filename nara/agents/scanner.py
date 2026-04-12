@@ -90,11 +90,8 @@ def run(target_path: str, session: dict) -> list[dict]:
         if len(findings) < len(bandit_findings):
             ui.print_info(f"LLM returned {len(findings)} finding(s) but tools found {len(bandit_findings)} — merging.")
             findings = _merge_findings(findings, bandit_findings)
-    except (json.JSONDecodeError, RuntimeError, AttributeError, TypeError) as e:
-        ui.print_error(f"LLM triage failed: {e}")
-        if raw:
-            ui.print_info(f"Raw LLM response (first 500 chars): {raw[:500]}")
-        ui.print_info("Falling back to raw tool output parsing.")
+    except (json.JSONDecodeError, RuntimeError, AttributeError, TypeError):
+        ui.print_info("LLM triage unavailable — using SAST tool output directly.")
         findings = bandit_findings
 
     project_root = os.path.abspath(target_path)
@@ -109,7 +106,7 @@ def run(target_path: str, session: dict) -> list[dict]:
 # SAST output condensers                                                #
 # ------------------------------------------------------------------ #
 
-_MAX_RESULTS = 20  # Cap findings sent to LLM to keep context small
+_MAX_RESULTS = 10  # Cap findings sent to LLM — Phi-4-mini has a 4096-token context
 
 
 def _as_dict(val) -> dict:
