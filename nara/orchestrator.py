@@ -23,6 +23,7 @@ _HELP_TEXT = """[bold white]NARA — Available Commands[/bold white]
   [bright_cyan]scan[/bright_cyan] [dim]<path|url>[/dim]   Scan a codebase for vulnerabilities
   [bright_yellow]plan[/bright_yellow]             Design a kill chain from scan findings
   [bright_red]exploit[/bright_red]          Execute the kill chain against the container
+  [bright_white]report[/bright_white]           Show the post-exploitation report
   [white]init[/white]             Provision the Docker container
   [white]reset[/white]            Tear down and restart the container (clean slate)
   [white]status[/white]           Show current session findings and state
@@ -72,6 +73,8 @@ def _classify_intent(text: str) -> str:
         return "init"
     if any(k in t for k in ["reset", "restart", "fresh", "clean slate", "tear down"]):
         return "reset"
+    if any(k in t for k in ["report", "pentest report", "exploitation report", "show report"]):
+        return "report"
     if any(k in t for k in ["status", "what did you find", "show findings", "what have you found", "findings"]):
         return "status"
     if t in ("help", "?", "commands", "what can you do"):
@@ -171,6 +174,12 @@ def route(user_input: str, session: dict) -> str:
 
     if intent == "reset":
         return _handle_reset(session)
+
+    if intent == "report":
+        if not session.get("exploit_results"):
+            return "No exploitation data yet. Run the exploit phase first."
+        ui.print_exploit_report(session, session["exploit_results"])
+        return ""
 
     if intent == "status":
         return _build_status(session)

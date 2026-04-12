@@ -691,33 +691,66 @@ def _write_banner_script() -> str:
     return script_path
 
 
-def show_ransom_popups(count: int = 20):
-    """Scatter ransom dialogs + terminal windows at random positions across the VNC desktop."""
+def show_ransom_popups(count: int = 25):
+    """Scatter terrifying ransom dialogs + terminal windows across the VNC desktop."""
     import random as _rng
     import time as _time
 
     env = os.environ.copy()
     env.setdefault("DISPLAY", ":1")
 
-    # Screen bounds (VNC resolution) minus window size to keep them on-screen
     SCR_W, SCR_H = 1920, 1080
 
-    # ── Wave 1: Zenity dialogs at random positions via xdotool ────────
+    # Rotating scary messages — each popup gets a different one
+    _SCARY_MSGS = [
+        (
+            "⚠ CRITICAL: ALL FILES ENCRYPTED ⚠\n\n"
+            "Your documents, databases, and credentials\n"
+            "have been seized by NARA.\n\n"
+            "There is no recovery without the decryption key."
+        ),
+        (
+            "☠ SYSTEM BREACH DETECTED ☠\n\n"
+            "Root access obtained.\n"
+            "Keylogger installed. Credentials harvested.\n"
+            "All outbound traffic is being monitored."
+        ),
+        (
+            "🔒 DATA EXFILTRATION COMPLETE 🔒\n\n"
+            "financial_report_Q4.xlsx — CAPTURED\n"
+            "employee_records.csv — CAPTURED\n"
+            "database_backup.sql — CAPTURED\n"
+            "api_keys.txt — CAPTURED"
+        ),
+        (
+            "⛔ RANSOMWARE DEPLOYED ⛔\n\n"
+            "Every file on this system has been\n"
+            "encrypted with military-grade AES-256.\n\n"
+            "Pay 5 BTC to recover your data.\n"
+            "You have 72 hours."
+        ),
+        (
+            "💀 NARA AUTONOMOUS AGENT 💀\n\n"
+            "I found your vulnerabilities.\n"
+            "I wrote my own exploits.\n"
+            "I owned your system.\n\n"
+            "No human was involved."
+        ),
+    ]
+
+    # ── Wave 1: Zenity error dialogs — scary red X icon ───────────────
     spawned = 0
     for i in range(count):
+        msg = _SCARY_MSGS[i % len(_SCARY_MSGS)]
         try:
             subprocess.Popen(
                 [
                     "zenity",
-                    "--warning",
-                    "--title=RANSOMWARE",
-                    "--text="
-                    "YOUR FILES HAVE BEEN ENCRYPTED\n\n"
-                    "All documents, photos, and databases\n"
-                    "have been locked by NARA.\n\n"
-                    "This is a security research demonstration.",
+                    "--error",
+                    "--title=⚠ RANSOMWARE — NARA ⚠",
+                    f"--text={msg}",
                     "--no-wrap",
-                    "--width=400",
+                    "--width=420",
                 ],
                 env=env,
                 stdout=subprocess.DEVNULL,
@@ -727,24 +760,23 @@ def show_ransom_popups(count: int = 20):
         except (FileNotFoundError, OSError):
             break
 
-    # Scatter the zenity windows that just spawned (if xdotool is available)
-    _time.sleep(0.5)  # let windows appear
+    # Scatter them randomly across the screen
+    _time.sleep(0.5)
     try:
         subprocess.Popen(
             ["bash", "-c",
-             "for wid in $(xdotool search --name RANSOMWARE 2>/dev/null); do "
-             f"  xdotool windowmove $wid $(shuf -i 0-{SCR_W - 420} -n1) $(shuf -i 0-{SCR_H - 250} -n1) 2>/dev/null; "
+             "for wid in $(xdotool search --name 'RANSOMWARE' 2>/dev/null); do "
+             f"  xdotool windowmove $wid $(shuf -i 0-{SCR_W - 440} -n1) $(shuf -i 0-{SCR_H - 300} -n1) 2>/dev/null; "
              "done"],
             env=env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
     except (FileNotFoundError, OSError):
-        pass  # xdotool not installed — zenity windows just cascade normally
+        pass
 
     # ── Wave 2: Terminal windows scattered randomly ───────────────────
     banner_script = _write_banner_script()
-    # Varying sizes for a chaotic look
     sizes = ["70x18", "85x22", "60x15", "75x20", "90x24", "65x16", "80x20",
              "70x18", "85x22", "60x15", "75x20"]
     term_count = 0
@@ -758,7 +790,7 @@ def show_ransom_popups(count: int = 20):
                 [
                     "xfce4-terminal",
                     f"--geometry={geom}",
-                    "--title=SYSTEM COMPROMISED",
+                    "--title=☠ SYSTEM COMPROMISED ☠",
                     "--hide-menubar",
                     "-e", f"bash {banner_script}",
                 ],
@@ -767,7 +799,7 @@ def show_ransom_popups(count: int = 20):
                 stderr=subprocess.DEVNULL,
             )
             term_count += 1
-            _time.sleep(0.08)  # stagger slightly so they visibly pop in one by one
+            _time.sleep(0.08)
         except (FileNotFoundError, OSError):
             break
 

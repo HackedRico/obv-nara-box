@@ -238,3 +238,120 @@ def print_system_compromised() -> None:
         padding=(1, 4),
     ))
     console.print()
+
+
+def print_exploit_report(session: dict, results: list[dict]) -> None:
+    """Render a professional penetration test report after exploitation."""
+    from datetime import datetime
+
+    findings = session.get("findings", [])
+    kill_chain = session.get("kill_chain", [])
+    target = session.get("target_repo", session.get("scan_path", "unknown"))
+
+    total = len(results)
+    succeeded = sum(1 for r in results if r["status"] == "success")
+
+    # ── Header ────────────────────────────────────────────────────────
+    console.print()
+    console.print(Panel(
+        "[bold bright_white]NARA EXPLOITATION REPORT[/bold bright_white]",
+        border_style="bright_red",
+        expand=True,
+        padding=(0, 2),
+    ))
+
+    # ── Target ────────────────────────────────────────────────────────
+    console.print(f"\n  [bold bright_red]── TARGET ─────────────────────────────────[/bold bright_red]")
+    console.print(f"  [dim]Date:[/dim]       {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    console.print(f"  [dim]Target:[/dim]     {target}")
+    if session.get("scan_path") and session.get("scan_path") != target:
+        console.print(f"  [dim]Scan path:[/dim]  {session['scan_path']}")
+
+    # ── Vulnerabilities ───────────────────────────────────────────────
+    if findings:
+        console.print(f"\n  [bold bright_red]── VULNERABILITIES DISCOVERED ({len(findings)}) ────────[/bold bright_red]")
+        vuln_table = Table(box=box.SIMPLE, expand=False, padding=(0, 2))
+        vuln_table.add_column("#", style="dim", width=3)
+        vuln_table.add_column("Severity", width=10)
+        vuln_table.add_column("Type", style="bold white")
+        vuln_table.add_column("Location", style="dim")
+        vuln_table.add_column("Description", style="dim", max_width=40)
+
+        sev_colors = {"CRITICAL": "bold red", "HIGH": "red", "MEDIUM": "yellow", "LOW": "green"}
+        for i, f in enumerate(findings, 1):
+            sev = f.get("severity", "?").upper()
+            vuln_table.add_row(
+                str(i),
+                f"[{sev_colors.get(sev, 'white')}]{sev}[/{sev_colors.get(sev, 'white')}]",
+                f.get("type", "Unknown"),
+                f"{f.get('file', '?')}:{f.get('line', '?')}",
+                (f.get("description", "") or "")[:60],
+            )
+        console.print(vuln_table)
+
+    # ── Kill chain ────────────────────────────────────────────────────
+    console.print(f"\n  [bold bright_red]── KILL CHAIN EXECUTION ────────────────────[/bold bright_red]")
+    chain_table = Table(box=box.SIMPLE, expand=False, padding=(0, 2))
+    chain_table.add_column("#", style="dim", width=3)
+    chain_table.add_column("Step", style="bold white")
+    chain_table.add_column("MITRE Tactic", style="dim")
+    chain_table.add_column("Status")
+
+    status_display = {
+        "success": "[bold green]✓ SUCCESS[/bold green]",
+        "failed":  "[bold red]✗ FAILED[/bold red]",
+        "aborted": "[yellow]⊘ ABORTED[/yellow]",
+    }
+    for i, r in enumerate(results, 1):
+        mitre = kill_chain[i - 1].get("mitre_tactic", "") if i <= len(kill_chain) else ""
+        chain_table.add_row(
+            str(i), r["step"], mitre,
+            status_display.get(r["status"], r["status"]),
+        )
+    console.print(chain_table)
+
+    # ── Assessment ────────────────────────────────────────────────────
+    rate = (succeeded / total * 100) if total else 0
+    if succeeded == total:
+        impact, impact_style, impact_msg = "CRITICAL", "bold red", "Full system compromise achieved"
+    elif succeeded > 0:
+        impact, impact_style, impact_msg = "HIGH", "red", "Partial system compromise"
+    else:
+        impact, impact_style, impact_msg = "LOW", "yellow", "Exploitation unsuccessful"
+
+    console.print(f"\n  [bold bright_red]── ASSESSMENT ─────────────────────────────[/bold bright_red]")
+    console.print(f"  Steps executed : {succeeded}/{total}")
+    console.print(f"  Success rate   : {rate:.0f}%")
+    console.print(f"  Impact         : [{impact_style}]{impact} — {impact_msg}[/{impact_style}]")
+
+    # ── Recommendations ───────────────────────────────────────────────
+    if findings:
+        recs: set[str] = set()
+        for f in findings:
+            vt = (f.get("type") or "").lower()
+            if "command" in vt or "injection" in vt and "sql" not in vt:
+                recs.add("Sanitize all user input passed to os.system() / subprocess")
+            if "sql" in vt:
+                recs.add("Use parameterized queries — never concatenate user input into SQL")
+            if "xss" in vt:
+                recs.add("Escape user-controlled output in HTML templates")
+            if "upload" in vt or "file" in vt:
+                recs.add("Validate file types and restrict upload directories")
+            if "ssrf" in vt:
+                recs.add("Restrict outbound requests to allowlisted hosts")
+            if "secret" in vt or "hardcoded" in vt:
+                recs.add("Move secrets to environment variables or a vault")
+        if not recs:
+            recs.add("Review and remediate all identified vulnerabilities")
+
+        console.print(f"\n  [bold bright_red]── RECOMMENDATIONS ────────────────────────[/bold bright_red]")
+        for rec in sorted(recs):
+            console.print(f"  [dim]•[/dim] {rec}")
+
+    console.print()
+    console.print(Panel(
+        "[dim]NARA Autonomous Red Team Platform — Bitcamp 2026[/dim]",
+        border_style="dim red",
+        expand=True,
+    ))
+    console.print()
