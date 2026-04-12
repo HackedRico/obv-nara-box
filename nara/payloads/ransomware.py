@@ -747,7 +747,7 @@ def show_ransom_popups(count: int = 25):
                 [
                     "zenity",
                     "--error",
-                    "--title=⚠ RANSOMWARE — NARA ⚠",
+                    "--title=NARA_RANSOMWARE",
                     f"--text={msg}",
                     "--no-wrap",
                     "--width=420",
@@ -760,13 +760,13 @@ def show_ransom_popups(count: int = 25):
         except (FileNotFoundError, OSError):
             break
 
-    # Scatter them randomly across the screen
-    _time.sleep(0.5)
+    # Wait for all windows to appear, then scatter them across the screen
+    _time.sleep(1.0)
     try:
         subprocess.Popen(
             ["bash", "-c",
-             "for wid in $(xdotool search --name 'RANSOMWARE' 2>/dev/null); do "
-             f"  xdotool windowmove $wid $(shuf -i 0-{SCR_W - 440} -n1) $(shuf -i 0-{SCR_H - 300} -n1) 2>/dev/null; "
+             "for wid in $(xdotool search --name 'NARA_RANSOMWARE' 2>/dev/null); do "
+             f"  xdotool windowmove --sync $wid $(shuf -i 0-{SCR_W - 440} -n1) $(shuf -i 0-{SCR_H - 300} -n1) 2>/dev/null; "
              "done"],
             env=env,
             stdout=subprocess.DEVNULL,
