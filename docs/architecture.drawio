@@ -1,0 +1,245 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/29.6.6 Chrome/144.0.7559.236 Electron/40.8.4 Safari/537.36" version="29.6.6">
+  <diagram name="NARA Architecture" id="nara-arch">
+    <mxGraphModel dx="1431" dy="1065" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="host-boundary" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;dashed=1;arcSize=8;fontColor=#333333;" value="" vertex="1">
+          <mxGeometry height="820" width="720" x="40" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="host-label" parent="1" style="text;html=1;align=left;verticalAlign=top;fontSize=16;fontStyle=1;fontColor=#333333;" value="HOST MACHINE" vertex="1">
+          <mxGeometry height="30" width="200" x="60" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="user" parent="1" style="shape=ellipse;whiteSpace=wrap;html=1;fillColor=#E6E6E6;strokeColor=#999999;strokeWidth=2;fontSize=14;fontStyle=1;" value="👤 User" vertex="1">
+          <mxGeometry height="50" width="100" x="310" y="80" as="geometry" />
+        </mxCell>
+        <mxCell id="cli-box" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a1a2e;strokeColor=#16213e;strokeWidth=2;arcSize=10;" value="" vertex="1">
+          <mxGeometry height="80" width="280" x="220" y="160" as="geometry" />
+        </mxCell>
+        <mxCell id="cli-label" parent="1" style="text;html=1;align=center;fontSize=16;fontStyle=1;fontColor=#e94560;" value="nara CLI" vertex="1">
+          <mxGeometry height="25" width="280" x="220" y="165" as="geometry" />
+        </mxCell>
+        <mxCell id="cli-desc" parent="1" style="text;html=1;align=center;fontSize=10;fontColor=#cccccc;" value="Interactive REPL (prompt_toolkit + Rich)&lt;br&gt;Natural language &amp; commands" vertex="1">
+          <mxGeometry height="40" width="280" x="220" y="190" as="geometry" />
+        </mxCell>
+        <mxCell id="user-to-cli" edge="1" parent="1" source="user" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#e94560;strokeWidth=2;fontColor=#666666;fontSize=10;" target="cli-box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="user-to-cli-label" connectable="0" parent="user-to-cli" style="edgeLabel;html=1;align=center;fontSize=9;fontColor=#999999;" value="natural language / commands" vertex="1">
+          <mxGeometry relative="1" x="0.2" as="geometry" />
+        </mxCell>
+        <mxCell id="orchestrator" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0f3460;strokeColor=#16213e;strokeWidth=2;arcSize=10;" value="" vertex="1">
+          <mxGeometry height="55" width="200" x="260" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="orch-label" parent="1" style="text;html=1;align=center;fontSize=13;fontStyle=1;fontColor=#e94560;" value="Orchestrator" vertex="1">
+          <mxGeometry height="20" width="200" x="260" y="283" as="geometry" />
+        </mxCell>
+        <mxCell id="orch-desc" parent="1" style="text;html=1;align=center;fontSize=9;fontColor=#cccccc;" value="Intent routing → agent pipeline" vertex="1">
+          <mxGeometry height="20" width="200" x="260" y="305" as="geometry" />
+        </mxCell>
+        <mxCell id="cli-to-orch" edge="1" parent="1" source="cli-box" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#e94560;strokeWidth=2;" target="orchestrator">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="scanner-box" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a1a2e;strokeColor=#0f3460;strokeWidth=2;arcSize=10;" value="" vertex="1">
+          <mxGeometry height="120" width="200" x="60" y="390" as="geometry" />
+        </mxCell>
+        <mxCell id="scanner-label" parent="1" style="text;html=1;align=center;fontSize=12;fontStyle=1;fontColor=#00d2ff;" value="Agent 1 — Scanner" vertex="1">
+          <mxGeometry height="20" width="200" x="60" y="395" as="geometry" />
+        </mxCell>
+        <mxCell id="scanner-desc" parent="1" style="text;html=1;align=left;fontSize=9;fontColor=#cccccc;" value="&lt;div style=&#39;text-align:left;padding-left:15px;&#39;&gt;• Semgrep (static analysis)&lt;br&gt;• Bandit (Python SAST)&lt;br&gt;• LLM deduplicates &amp; triages&lt;br&gt;• Runs on &lt;b&gt;host&lt;/b&gt; against codebase&lt;/div&gt;" vertex="1">
+          <mxGeometry height="80" width="200" x="60" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="planner-box" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a1a2e;strokeColor=#0f3460;strokeWidth=2;arcSize=10;" value="" vertex="1">
+          <mxGeometry height="120" width="200" x="280" y="390" as="geometry" />
+        </mxCell>
+        <mxCell id="planner-label" parent="1" style="text;html=1;align=center;fontSize=12;fontStyle=1;fontColor=#f5a623;" value="Agent 2 — Planner" vertex="1">
+          <mxGeometry height="20" width="200" x="280" y="395" as="geometry" />
+        </mxCell>
+        <mxCell id="planner-desc" parent="1" style="text;html=1;align=left;fontSize=9;fontColor=#cccccc;" value="&lt;div style=&#39;text-align:left;padding-left:15px;&#39;&gt;• Designs ordered kill chain&lt;br&gt;• Determines required tools&lt;br&gt;• Ransomware as final stage&lt;br&gt;• Maps to MITRE ATT&amp;CK&lt;/div&gt;" vertex="1">
+          <mxGeometry height="80" width="200" x="280" y="420" as="geometry" />
+        </mxCell>
+        <mxCell id="exploiter-box" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a1a2e;strokeColor=#0f3460;strokeWidth=2;arcSize=10;" value="" vertex="1">
+          <mxGeometry height="120" width="220" x="500" y="390" as="geometry" />
+        </mxCell>
+        <mxCell id="exploiter-label" parent="1" style="text;html=1;align=center;fontSize=12;fontStyle=1;fontColor=#e94560;" value="Agent 3 — Exploiter" vertex="1">
+          <mxGeometry height="20" width="220" x="500" y="395" as="geometry" />
+        </mxCell>
+        <mxCell id="exploiter-desc" parent="1" style="text;html=1;align=left;fontSize=9;fontColor=#cccccc;" value="&lt;div style=&#39;text-align:left;padding-left:15px;&#39;&gt;• Provisions container&lt;br&gt;• Clones &amp; starts vuln app&lt;br&gt;• Executes kill chain steps&lt;br&gt;• Deploys ransomware payload&lt;br&gt;• Adapts on failure (LLM)&lt;/div&gt;" vertex="1">
+          <mxGeometry height="85" width="220" x="500" y="418" as="geometry" />
+        </mxCell>
+        <mxCell id="orch-to-scanner" edge="1" parent="1" source="orchestrator" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#00d2ff;strokeWidth=1.5;" target="scanner-box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="orch-to-planner" edge="1" parent="1" source="orchestrator" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#f5a623;strokeWidth=1.5;" target="planner-box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="orch-to-exploiter" edge="1" parent="1" source="orchestrator" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#e94560;strokeWidth=1.5;" target="exploiter-box">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="scanner-to-planner" edge="1" parent="1" source="scanner-box" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#00d2ff;strokeWidth=2;dashed=1;fontSize=9;fontColor=#000000;labelBackgroundColor=none;" target="planner-box" value="structured findings">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="160" y="530" />
+              <mxPoint x="380" y="530" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="planner-to-exploiter" edge="1" parent="1" source="planner-box" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#f5a623;strokeWidth=2;dashed=1;fontSize=9;fontColor=default;labelBackgroundColor=none;" target="exploiter-box" value="kill chain plan">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="380" y="550" />
+              <mxPoint x="610" y="550" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="llm-boundary" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2d132c;strokeColor=#e94560;strokeWidth=1.5;dashed=1;arcSize=12;" value="" vertex="1">
+          <mxGeometry height="100" width="680" x="60" y="590" as="geometry" />
+        </mxCell>
+        <mxCell id="llm-title" parent="1" style="text;html=1;align=left;fontSize=12;fontStyle=1;fontColor=#e94560;" value="LLM Backend  (.env toggle)" vertex="1">
+          <mxGeometry height="20" width="250" x="75" y="595" as="geometry" />
+        </mxCell>
+        <mxCell id="featherless" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a1a2e;strokeColor=#e94560;strokeWidth=2;arcSize=10;" value="" vertex="1">
+          <mxGeometry height="50" width="190" x="80" y="625" as="geometry" />
+        </mxCell>
+        <mxCell id="featherless-label" parent="1" style="text;html=1;align=center;fontSize=11;fontStyle=1;fontColor=#e94560;" value="⚡ FeatherLess API (default)" vertex="1">
+          <mxGeometry height="18" width="190" x="80" y="627" as="geometry" />
+        </mxCell>
+        <mxCell id="featherless-desc" parent="1" style="text;html=1;align=center;fontSize=8;fontColor=#cccccc;" value="Phi-4-mini-instruct (hosted, open-source)" vertex="1">
+          <mxGeometry height="20" width="190" x="80" y="647" as="geometry" />
+        </mxCell>
+        <mxCell id="claude" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a1a2e;strokeColor=#f5a623;strokeWidth=2;arcSize=10;" value="" vertex="1">
+          <mxGeometry height="50" width="190" x="290" y="625" as="geometry" />
+        </mxCell>
+        <mxCell id="claude-label" parent="1" style="text;html=1;align=center;fontSize=11;fontStyle=1;fontColor=#f5a623;" value="🧠 Claude API" vertex="1">
+          <mxGeometry height="18" width="190" x="290" y="627" as="geometry" />
+        </mxCell>
+        <mxCell id="claude-desc" parent="1" style="text;html=1;align=center;fontSize=8;fontColor=#cccccc;" value="Best reasoning quality" vertex="1">
+          <mxGeometry height="20" width="190" x="290" y="647" as="geometry" />
+        </mxCell>
+        <mxCell id="ollama" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a1a2e;strokeColor=#00d2ff;strokeWidth=2;arcSize=10;" value="" vertex="1">
+          <mxGeometry height="50" width="190" x="500" y="625" as="geometry" />
+        </mxCell>
+        <mxCell id="ollama-label" parent="1" style="text;html=1;align=center;fontSize=11;fontStyle=1;fontColor=#00d2ff;" value="🏠 Ollama" vertex="1">
+          <mxGeometry height="18" width="190" x="500" y="627" as="geometry" />
+        </mxCell>
+        <mxCell id="ollama-desc" parent="1" style="text;html=1;align=center;fontSize=8;fontColor=#cccccc;" value="Qwen2.5 — free, offline" vertex="1">
+          <mxGeometry height="20" width="190" x="500" y="647" as="geometry" />
+        </mxCell>
+        <mxCell id="agents-to-llm" edge="1" parent="1" source="planner-box" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#999999;strokeWidth=1;dashed=1;fontSize=8;fontColor=#000000;" target="llm-boundary" value="all agents use llm_client.py">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="docker-boundary" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#0a3d62;strokeColor=#00d2ff;strokeWidth=3;arcSize=8;" value="" vertex="1">
+          <mxGeometry height="820" width="420" x="840" y="40" as="geometry" />
+        </mxCell>
+        <mxCell id="docker-label" parent="1" style="text;html=1;align=left;fontSize=16;fontStyle=1;fontColor=#00d2ff;" value="DOCKER CONTAINER" vertex="1">
+          <mxGeometry height="30" width="250" x="860" y="50" as="geometry" />
+        </mxCell>
+        <mxCell id="docker-sublabel" parent="1" style="text;html=1;align=left;fontSize=10;fontColor=#7ec8e3;" value="Ubuntu 22.04 — disposable, resettable" vertex="1">
+          <mxGeometry height="20" width="300" x="860" y="72" as="geometry" />
+        </mxCell>
+        <mxCell id="xfce-box" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a1a2e;strokeColor=#00d2ff;strokeWidth=2;arcSize=10;" value="" vertex="1">
+          <mxGeometry height="80" width="360" x="870" y="110" as="geometry" />
+        </mxCell>
+        <mxCell id="xfce-label" parent="1" style="text;html=1;align=center;fontSize=13;fontStyle=1;fontColor=#00d2ff;" value="🖥️ XFCE4 Desktop Environment" vertex="1">
+          <mxGeometry height="22" width="360" x="870" y="115" as="geometry" />
+        </mxCell>
+        <mxCell id="xfce-desc" parent="1" style="text;html=1;align=center;fontSize=9;fontColor=#cccccc;" value="Visual ransomware effects: wallpaper hijack, ransom popups,&lt;br&gt;encrypted files, stolen credential evidence" vertex="1">
+          <mxGeometry height="40" width="360" x="870" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="vnc-boundary" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#16213e;strokeColor=#00d2ff;strokeWidth=1.5;arcSize=10;" value="" vertex="1">
+          <mxGeometry height="130" width="360" x="870" y="210" as="geometry" />
+        </mxCell>
+        <mxCell id="vnc-title" parent="1" style="text;html=1;align=center;fontSize=11;fontStyle=1;fontColor=#00d2ff;" value="Remote Desktop Stack" vertex="1">
+          <mxGeometry height="20" width="360" x="870" y="215" as="geometry" />
+        </mxCell>
+        <mxCell id="tigervnc" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a1a2e;strokeColor=#7ec8e3;strokeWidth=1.5;arcSize=8;" value="" vertex="1">
+          <mxGeometry height="45" width="150" x="890" y="245" as="geometry" />
+        </mxCell>
+        <mxCell id="tigervnc-label" parent="1" style="text;html=1;align=center;fontSize=11;fontStyle=1;fontColor=#7ec8e3;" value="TigerVNC :5901" vertex="1">
+          <mxGeometry height="16" width="150" x="890" y="248" as="geometry" />
+        </mxCell>
+        <mxCell id="tigervnc-desc" parent="1" style="text;html=1;align=center;fontSize=8;fontColor=#cccccc;" value="VNC server" vertex="1">
+          <mxGeometry height="16" width="150" x="890" y="266" as="geometry" />
+        </mxCell>
+        <mxCell id="novnc" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a1a2e;strokeColor=#e94560;strokeWidth=2;arcSize=8;" value="" vertex="1">
+          <mxGeometry height="45" width="150" x="1060" y="245" as="geometry" />
+        </mxCell>
+        <mxCell id="novnc-label" parent="1" style="text;html=1;align=center;fontSize=11;fontStyle=1;fontColor=#e94560;" value="noVNC :6080" vertex="1">
+          <mxGeometry height="16" width="150" x="1060" y="248" as="geometry" />
+        </mxCell>
+        <mxCell id="novnc-desc" parent="1" style="text;html=1;align=center;fontSize=8;fontColor=#cccccc;" value="Browser-based viewer" vertex="1">
+          <mxGeometry height="16" width="150" x="1060" y="266" as="geometry" />
+        </mxCell>
+        <mxCell id="novnc-browser" parent="1" style="text;html=1;align=center;fontSize=9;fontStyle=2;fontColor=#e94560;" value="localhost:6080 →&lt;br&gt;opens in browser" vertex="1">
+          <mxGeometry height="30" width="150" x="1060" y="295" as="geometry" />
+        </mxCell>
+        <mxCell id="vnc-to-novnc" edge="1" parent="1" source="tigervnc" style="rounded=1;strokeColor=#7ec8e3;strokeWidth=1.5;" target="novnc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="xfce-to-vnc" edge="1" parent="1" source="xfce-box" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#00d2ff;strokeWidth=1.5;fontSize=8;fontColor=#7ec8e3;" target="vnc-boundary" value="desktop stream">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="vuln-app-box" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a1a2e;strokeColor=#e94560;strokeWidth=2;arcSize=10;" value="" vertex="1">
+          <mxGeometry height="150" width="360" x="870" y="370" as="geometry" />
+        </mxCell>
+        <mxCell id="vuln-app-label" parent="1" style="text;html=1;align=center;fontSize=13;fontStyle=1;fontColor=#e94560;" value="🎮 Pokemon Pokedex App :8080" vertex="1">
+          <mxGeometry height="22" width="360" x="870" y="375" as="geometry" />
+        </mxCell>
+        <mxCell id="vuln-app-sub" parent="1" style="text;html=1;align=center;fontSize=9;fontColor=#cccccc;" value="Flask — deliberately vulnerable" vertex="1">
+          <mxGeometry height="16" width="360" x="870" y="395" as="geometry" />
+        </mxCell>
+        <mxCell id="vuln-endpoints" parent="1" style="text;html=1;align=left;fontSize=9;fontColor=#cccccc;" value="&lt;div style=&#39;text-align:left;padding-left:20px;&#39;&gt;&lt;b style=&#39;color:#e94560&#39;&gt;GET /api/pokemon?name=&lt;/b&gt; → Command Injection (os.system)&lt;br&gt;&lt;b style=&#39;color:#f5a623&#39;&gt;POST /api/team&lt;/b&gt; → SQL Injection (raw concat)&lt;br&gt;&lt;b style=&#39;color:#f5a623&#39;&gt;GET /api/pokedex?search=&lt;/b&gt; → Reflected XSS&lt;br&gt;&lt;b style=&#39;color:#cccccc&#39;&gt;POST /api/upload-sprite&lt;/b&gt; → Unrestricted File Upload&lt;br&gt;&lt;b style=&#39;color:#cccccc&#39;&gt;GET /api/stats?pokemon=&lt;/b&gt; → SSRF&lt;/div&gt;" vertex="1">
+          <mxGeometry height="95" width="360" x="870" y="415" as="geometry" />
+        </mxCell>
+        <mxCell id="ransom-box" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#4a0e0e;strokeColor=#e94560;strokeWidth=2;arcSize=10;" value="" vertex="1">
+          <mxGeometry height="120" width="360" x="870" y="550" as="geometry" />
+        </mxCell>
+        <mxCell id="ransom-label" parent="1" style="text;html=1;align=center;fontSize=13;fontStyle=1;fontColor=#e94560;" value="💀 Ransomware Payload Effects" vertex="1">
+          <mxGeometry height="22" width="360" x="870" y="555" as="geometry" />
+        </mxCell>
+        <mxCell id="ransom-desc" parent="1" style="text;html=1;align=left;fontSize=9;fontColor=#ffcccc;" value="&lt;div style=&#39;text-align:left;padding-left:20px;&#39;&gt;• Desktop wallpaper hijacked&lt;br&gt;• Files renamed to *.NARA_ENCRYPTED&lt;br&gt;• Ransom note dropped on desktop&lt;br&gt;• Popup windows scattered across screen&lt;br&gt;• Stolen credentials / exfil evidence planted&lt;/div&gt;" vertex="1">
+          <mxGeometry height="85" width="360" x="870" y="578" as="geometry" />
+        </mxCell>
+        <mxCell id="ports-box" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#16213e;strokeColor=#00d2ff;strokeWidth=1.5;arcSize=8;" value="" vertex="1">
+          <mxGeometry height="80" width="360" x="870" y="700" as="geometry" />
+        </mxCell>
+        <mxCell id="ports-label" parent="1" style="text;html=1;align=center;fontSize=11;fontStyle=1;fontColor=#00d2ff;" value="Exposed Ports" vertex="1">
+          <mxGeometry height="18" width="360" x="870" y="705" as="geometry" />
+        </mxCell>
+        <mxCell id="ports-desc" parent="1" style="text;html=1;align=center;fontSize=10;fontColor=#cccccc;" value="&lt;div style=&#39;text-align:center;&#39;&gt;&lt;b style=&#39;color:#7ec8e3&#39;&gt;:5901&lt;/b&gt; TigerVNC &amp;nbsp;&amp;nbsp;│&amp;nbsp;&amp;nbsp; &lt;b style=&#39;color:#e94560&#39;&gt;:6080&lt;/b&gt; noVNC (browser) &amp;nbsp;&amp;nbsp;│&amp;nbsp;&amp;nbsp; &lt;b style=&#39;color:#f5a623&#39;&gt;:8080&lt;/b&gt; Web App&lt;/div&gt;" vertex="1">
+          <mxGeometry height="40" width="360" x="870" y="728" as="geometry" />
+        </mxCell>
+        <mxCell id="exec-arrow" edge="1" parent="1" source="exploiter-box" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#e94560;strokeWidth=3;fontSize=12;fontStyle=1;fontColor=#e94560;labelBackgroundColor=none;entryX=0;entryY=0.5;exitX=1;exitY=0.5;" target="vuln-app-box" value="docker exec">
+          <mxGeometry relative="1" x="0.0968" y="-15" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="780" y="450" />
+              <mxPoint x="780" y="445" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="stdout-return" edge="1" parent="1" source="vuln-app-box" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeColor=#00d2ff;strokeWidth=2;dashed=1;fontSize=9;fontColor=#7ec8e3;labelBackgroundColor=none;exitX=0;exitY=0.85;entryX=1;entryY=0.85;" target="exploiter-box" value="stdout / stderr">
+          <mxGeometry relative="1" x="-0.0997" y="13" as="geometry">
+            <mxPoint y="-1" as="offset" />
+            <Array as="points">
+              <mxPoint x="790" y="498" />
+              <mxPoint x="790" y="492" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="legend-box" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#1a1a2e;strokeColor=#666666;strokeWidth=1;arcSize=10;" value="" vertex="1">
+          <mxGeometry height="110" width="680" x="60" y="730" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-title" parent="1" style="text;html=1;align=left;fontSize=11;fontStyle=1;fontColor=#cccccc;" value="Data Flow" vertex="1">
+          <mxGeometry height="18" width="100" x="75" y="735" as="geometry" />
+        </mxCell>
+        <mxCell id="legend-flow" parent="1" style="text;html=1;align=left;fontSize=9;fontColor=#cccccc;" value="&lt;div style=&#39;text-align:left;line-height:1.8;&#39;&gt;1. User → &lt;b style=&#39;color:#e94560&#39;&gt;nara CLI&lt;/b&gt; → &lt;b&gt;Orchestrator&lt;/b&gt; routes intent&lt;br&gt;2. &lt;b style=&#39;color:#00d2ff&#39;&gt;Scanner&lt;/b&gt; runs Semgrep + Bandit on host → structured findings&lt;br&gt;3. &lt;b style=&#39;color:#f5a623&#39;&gt;Planner&lt;/b&gt; designs kill chain from findings → ordered steps&lt;br&gt;4. &lt;b style=&#39;color:#e94560&#39;&gt;Exploiter&lt;/b&gt; provisions container → fires exploits via &lt;code&gt;docker exec&lt;/code&gt; → deploys ransomware&lt;br&gt;5. Desktop effects visible via &lt;b style=&#39;color:#e94560&#39;&gt;noVNC&lt;/b&gt; at &lt;code&gt;localhost:6080&lt;/code&gt; in browser&lt;/div&gt;" vertex="1">
+          <mxGeometry height="80" width="650" x="75" y="755" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

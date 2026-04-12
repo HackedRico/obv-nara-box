@@ -52,6 +52,8 @@ nara > pipeline https://github.com/aprameyak/exploitable-dummy-app
 
 ## How It Works
 
+![NARA Architecture](docs/architecture.jpg)
+
 ```
 USER (natural language or commands)
   │
@@ -74,7 +76,7 @@ Orchestrator (intent routing)
 ```
 
 **Host machine** = scanning, planning, orchestration, LLM reasoning
-**Docker container** = disposable target with Ubuntu 22.04 + XFCE desktop + VNC
+**Docker container** = disposable target with Ubuntu 22.04 + XFCE desktop + noVNC
 
 ---
 
