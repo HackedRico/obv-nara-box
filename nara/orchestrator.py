@@ -23,6 +23,7 @@ _HELP_TEXT = """[bold white]NARA — Available Commands[/bold white]
   [bright_cyan]scan[/bright_cyan] [dim]<path|url>[/dim]   Scan a codebase for vulnerabilities
   [bright_yellow]plan[/bright_yellow]             Design a kill chain from scan findings
   [bright_red]exploit[/bright_red]          Execute the kill chain against the container
+  [bright_green]run[/bright_green] [dim]<command>[/dim]    Execute a shell command inside the container
   [bright_white]report[/bright_white]           Show the post-exploitation report
   [white]init[/white]             Provision the Docker container
   [white]reset[/white]            Tear down and restart the container (clean slate)
@@ -31,6 +32,8 @@ _HELP_TEXT = """[bold white]NARA — Available Commands[/bold white]
   [white]exit[/white] / [white]quit[/white]    End the session
 
 Or just talk naturally — NARA understands plain English.
+After exploitation, you can also describe actions in plain English and NARA
+will translate them to shell commands (e.g. "check what users exist").
 """
 
 _SYSTEM_PROMPT = (
@@ -69,8 +72,12 @@ def _classify_intent(text: str) -> str:
     first = t.split()[0] if t else ""
 
     # ── Commands that trigger actions (first-word match) ─────────────
+    # Pipeline checked first — "run all" / "full attack" are pipeline aliases
     if first in ("pipeline", "pwn", "autopwn", "nuke") or any(k in t for k in ["run all", "full attack", "auto pwn"]):
         return "pipeline"
+    # ── Post-exploit shell execution ──────────────────────────────────
+    if first in ("run", "exec", "shell") and len(t.split()) > 1:
+        return "exec"
     if first in ("scan", "analyze", "analyse", "audit") or any(k in t for k in ["find vuln", "check for vuln"]):
         return "scan"
     if first == "plan" or any(k in t for k in ["design attack"]):
@@ -112,6 +119,9 @@ def route(user_input: str, session: dict) -> str:
 
     if intent == "exit":
         return "__EXIT__"
+
+    if intent == "exec":
+        return _handle_exec(user_input, session)
 
     if intent == "pipeline":
         return _handle_pipeline(user_input, session)
@@ -255,6 +265,36 @@ def _handle_pipeline(user_input: str, session: dict) -> str:
     return f"\n[Pipeline complete]\n{result}"
 
 
+def _handle_exec(user_input: str, session: dict) -> str:
+    """Execute a shell command inside the container."""
+    if not session.get("container_running"):
+        return "Container not running. Use 'init' to start it first."
+
+    docker = _get_docker()
+
+    # Strip the "run " / "exec " / "shell " prefix to get the raw command
+    parts = user_input.split(None, 1)
+    cmd = parts[1] if len(parts) > 1 else ""
+    if not cmd.strip():
+        return "Usage: run <command>  (e.g. 'run whoami', 'run cat /etc/passwd')"
+
+    ui.console.print(f"  [bold bright_green][EXEC][/bold bright_green] {cmd}")
+
+    try:
+        output = docker.exec(cmd) or "(no output)"
+    except Exception as e:
+        output = f"exec error: {e}"
+
+    ui.stream_output(output)
+
+    # Log to shell history for conversational context
+    if "shell_history" not in session:
+        session["shell_history"] = []
+    session["shell_history"].append({"command": cmd, "output": output[:2000]})
+
+    return ""
+
+
 # ------------------------------------------------------------------ #
 # Private helpers                                                      #
 # ------------------------------------------------------------------ #
@@ -327,8 +367,10 @@ def _handle_reset(session: dict) -> str:
             docker.reset()
         session["container_running"] = True
         session["app_provisioned"] = False
+        session["exploited"] = False
         session["findings"] = []
         session["kill_chain"] = []
+        session["shell_history"] = []
         ui.print_success("Container reset — fresh environment ready.")
         return "Session state cleared, container restarted. VNC on :5901."
     except Exception as e:
@@ -388,13 +430,72 @@ def _build_session_context(session: dict) -> str:
             else:
                 parts.append(f"- {r}")
 
+    shell_hist = session.get("shell_history", [])
+    if shell_hist:
+        parts.append(f"\n## Post-Exploit Shell History ({len(shell_hist)} commands)")
+        for entry in shell_hist[-10:]:  # last 10 to keep context manageable
+            parts.append(f"$ {entry['command']}\n{entry['output'][:500]}")
+
     return "\n".join(parts)
 
 
+_NL_TO_SHELL_SYSTEM = (
+    "You are a post-exploitation shell translator. The user has shell access "
+    "to a compromised Ubuntu Docker container. Translate their natural language "
+    "request into a single bash command.\n\n"
+    "Rules:\n"
+    "- Return ONLY the raw shell command. No explanation. No markdown. No backticks.\n"
+    "- If the request does not imply a shell action, return exactly: NOT_A_COMMAND\n"
+    "- Prefer simple coreutils (cat, grep, find, ls, whoami, id, ps) over complex tools.\n"
+    "- The container has: python3, curl, wget, git, netcat, sqlite3, and standard Linux tools."
+)
+
+
 def _chat_response(user_input: str, session: dict) -> str:
-    """Pass unrecognized input to the LLM for a conversational response."""
+    """Pass unrecognized input to the LLM for a conversational response.
+
+    When the container has been exploited, first check if the user's input
+    implies a shell command. If so, translate and execute it automatically.
+    """
     llm = _get_llm()
 
+    # ── Post-exploit: try NL → shell translation first ───────────────
+    if session.get("exploited") and session.get("container_running"):
+        try:
+            with ui.spinner("Interpreting..."):
+                translated = llm.chat(
+                    [{"role": "user", "content": user_input}],
+                    system=_NL_TO_SHELL_SYSTEM,
+                )
+            cmd = translated.strip().strip("`").strip()
+
+            if cmd and cmd != "NOT_A_COMMAND" and not cmd.startswith("NOT_A_COMMAND"):
+                # LLM thinks this is a shell action — execute it
+                ui.console.print(
+                    f"  [bold bright_green][EXEC][/bold bright_green] {cmd}"
+                )
+                docker = _get_docker()
+                try:
+                    output = docker.exec(cmd) or "(no output)"
+                except Exception as e:
+                    output = f"exec error: {e}"
+
+                ui.stream_output(output)
+
+                if "shell_history" not in session:
+                    session["shell_history"] = []
+                session["shell_history"].append({"command": cmd, "output": output[:2000]})
+
+                session["history"].append({"role": "user", "content": user_input})
+                session["history"].append({
+                    "role": "assistant",
+                    "content": f"Executed: `{cmd}`\nOutput:\n{output[:1000]}",
+                })
+                return ""
+        except Exception:
+            pass  # Fall through to normal chat if translation fails
+
+    # ── Normal conversational response ───────────────────────────────
     context = _build_session_context(session)
 
     session["history"].append({"role": "user", "content": user_input})

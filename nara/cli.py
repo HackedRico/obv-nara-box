@@ -21,7 +21,9 @@ _SESSION_TEMPLATE: dict = {
     "kill_chain": [],
     "container_running": False,
     "app_provisioned": False,
+    "exploited": False,
     "history": [],
+    "shell_history": [],
 }
 
 
