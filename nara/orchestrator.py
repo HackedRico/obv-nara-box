@@ -28,6 +28,7 @@ _HELP_TEXT = """[bold white]NARA — Available Commands[/bold white]
   [white]init[/white]             Provision the Docker container
   [white]reset[/white]            Tear down and restart the container (clean slate)
   [white]status[/white]           Show current session findings and state
+  [bright_cyan]vnc[/bright_cyan]              Show the noVNC viewer URL
   [white]help[/white]             Show this message
   [white]exit[/white] / [white]quit[/white]    End the session
 
@@ -92,6 +93,8 @@ def _classify_intent(text: str) -> str:
         return "report"
     if first in ("status", "findings") or any(k in t for k in ["what did you find", "show findings", "what have you found"]):
         return "status"
+    if first == "vnc" or any(k in t for k in ["open vnc", "show vnc", "vnc link", "view desktop"]):
+        return "vnc"
     if t in ("help", "?", "commands", "what can you do"):
         return "help"
     if t in ("exit", "quit", "bye", "q"):
@@ -112,6 +115,11 @@ def route(user_input: str, session: dict) -> str:
     """
     intent = _classify_intent(user_input)
 
+    if intent == "vnc":
+        url = "http://localhost:6080/vnc.html?autoconnect=true&resize=scale"
+        ui.console.print(f"\n[bold bright_cyan]noVNC URL:[/bold bright_cyan] [underline]{url}[/underline]")
+        ui.console.print("[dim]Open this in your browser to view the desktop live.[/dim]\n")
+        return ""
     if intent == "help":
         from rich.console import Console
         Console().print(_HELP_TEXT)
