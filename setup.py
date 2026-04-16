@@ -4,6 +4,7 @@ setup(
     name="nara",
     version="0.1.0",
     description="Autonomous AI-powered penetration testing CLI",
+    license="MIT",
     packages=find_packages(),
     package_data={
         "nara": [
